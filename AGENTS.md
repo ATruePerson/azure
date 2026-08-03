@@ -1,6 +1,9 @@
 # AGENTS.md — acc-proxy
 
-`acc-proxy` is a high-performance Go gateway that intercepts Anthropic SDK requests (like Codex) and translates them into OpenAI-compatible requests, routing to cheaper or specialized upstreams (NVIDIA NIM, Gemini, OpenRouter, OpenCode).
+`acc-proxy` keeps the Go CLI, reversible client lifecycle, MCP, legacy gateway,
+and auth tooling. `acc claude` and `acc codex start` launch the embedded,
+stdlib-only Python runtime in `claude/proxy.py` for live Messages and Responses
+routing to NVIDIA NIM, Gemini, OpenRouter, and OpenCode.
 
 For the current Codex Desktop integration, model-family mapping, launch rules,
 and failure history, read [`README.md`](README.md) (Working context section)
@@ -16,22 +19,23 @@ before changing `acc codex`.
 | `model_registry.go` | Codex capabilities, exact effort validation, explicit fallback chain | `responseModelChain`, `applyReasoningTarget` |
 | `codex_integration.go` | Codex CLI lifecycle (`acc codex start/setup/restore`) | `cmdCodexLifecycle`, `configureNativeCodex` |
 | `config_load.go` | Split config merge (`providers` + `claude` + `codex`) | `loadConfig`, `writeDefaultSplitConfig` |
-| `claude/` | Claude Code translation, persona, streaming, bench | `TranslateRequest`, `RequestWithACCPersona`, `StreamTranslate`, `RunBench` |
+| `claude/proxy.py` | Live Claude Messages + Codex Responses routing and streaming | `translate_request`, `translate_responses_request`, `anthropic_stream`, `responses_stream` |
+| `claude/*.go` | Legacy/shared Go protocol helpers and persona bench | `TranslateRequest`, `RequestWithACCPersona`, `StreamTranslate`, `RunBench` |
 | `claude/persona.md` | ACC Second Brain identity (embedded fallback) | loaded via `claude.SetPersonaFilePath` |
 | `codex/` | Codex app config, catalog, baseline, TOML surgery | `NamedModels`, `ConfigureApp`, `RestoreApp` |
 | `internal/types/` | Shared config + protocol schemas | `Config`, `AnthropicRequest`, `OpenAIRequest` |
-| `web/app/` | Trueox assistant UI (HTML + CSS + JS, embedded) | `index.html`, `assets/app.css`, `assets/app.js` |
-| `web/dashboard/` | Proxy gateway dashboard UI (embedded) | `index.html`, `assets/dashboard.css`, `assets/dashboard.js` |
+| `web/app/` | Trueox assistant UI (HTML + CSS + typed API client + JS UI, embedded) | `index.html`, `src/trueox-api.ts`, `assets/*` |
+| `web/dashboard/` | Proxy gateway dashboard UI (HTML + CSS + TypeScript, embedded) | `index.html`, `src/dashboard.ts`, `assets/*` |
 | `web_static.go` | `go:embed` file server for `/app/` and `/dashboard/` | `handleApp`, `handleDashboardUI` |
 | `app_ui.go` | Pointer to app UI location (handlers in `web_static.go`) | — |
 | `dashboard.go` | Dashboard JSON API (`/dashboard/api/*`) | `handleDashboardLogs`, `handleDashboardInfo` |
 | `tui.go` | Live terminal dashboard + persistent logger | `AddTUILog` (writes `test_runs.jsonl`), `drawDashboard` |
+| `benchmarks/python/` | Python benchmark analysis and reporting | `acc_eval`, percentiles, failure classes, Markdown/JSON reports |
 | `types.go` | Type aliases into `internal/types` | `Config`, `Route`, `OpenAIRequest` |
-| `dashboard.go` | Web dashboard HTML + JSON API endpoints | `handleDashboard`, `handleDashboardLogs` |
 
 ## Active environment & paths
 
-- **Binary**: `/Users/kabir/.local/bin/acc-proxy`
+- **Binary**: `/Users/kabir/.local/bin/acc`
 - **Config root**: `/Users/kabir/.config/acc/`
   - `providers.json` — port, providers, global `system_prepend`
   - `claude/config.json` — Claude Code `alias_routes`
@@ -94,8 +98,8 @@ A route's `extra_body` is **flat-merged to the top level** of the outgoing reque
   Code aliases. Each may set `system_prepend` to `@system_prompts/...` resolved
   under `claude/`. When set, ACC skips its Second Brain persona for that alias.
 - Shared persona remains `system_prompts/persona.md` at the config root.
-- Config is hot-reloaded per request across all three files; Go source changes
-  need a rebuild.
+- Config is hot-reloaded per request across all three files; embedded Python or
+  Go source changes need a rebuild.
 
 ## Dev cheat sheet
 

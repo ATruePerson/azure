@@ -84,13 +84,13 @@ type ModelCapability struct {
 
 	Reasoning map[string]ReasoningTarget `json:"reasoning,omitempty"`
 
-	ToolCallSupport      bool     `json:"tool_call_support"`
-	StreamingSupport     bool     `json:"streaming_support"`
-	ImageInputSupport    bool     `json:"image_input_support"`
-	FileInputSupport     bool     `json:"file_input_support"`
-	MaxContext           int      `json:"max_context"`
-	MaxOutput            int      `json:"max_output"`
-	Enabled              bool     `json:"enabled"`
+	ToolCallSupport   bool `json:"tool_call_support"`
+	StreamingSupport  bool `json:"streaming_support"`
+	ImageInputSupport bool `json:"image_input_support"`
+	FileInputSupport  bool `json:"file_input_support"`
+	MaxContext        int  `json:"max_context"`
+	MaxOutput         int  `json:"max_output"`
+	Enabled           bool `json:"enabled"`
 }
 
 type ReasoningTarget struct {

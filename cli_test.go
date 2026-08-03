@@ -68,15 +68,36 @@ func TestDetachedProxyCommandPinsConfigAndEnvPaths(t *testing.T) {
 	}
 }
 
-func TestProxyExecutablePrefersManagedSibling(t *testing.T) {
-	dir := t.TempDir()
-	command := filepath.Join(dir, "acc")
-	proxy := filepath.Join(dir, "acc-proxy")
-	if err := os.WriteFile(proxy, []byte("proxy"), 0755); err != nil {
-		t.Fatal(err)
+func TestClaudePythonCommandUsesEmbeddedRuntime(t *testing.T) {
+	cmd := claudePythonCommand("/usr/bin/python3", "/tmp/acc-config")
+	if len(claudeProxyPython) < 100 || !strings.Contains(claudeProxyPython, "ACC Python gateway") {
+		t.Fatal("embedded Claude Python runtime is missing")
 	}
-	if got := proxyExecutable(command); got != proxy {
-		t.Fatalf("proxy executable = %q, want %q", got, proxy)
+	wantTail := []string{"--config-root", "/tmp/acc-config", "--port", "0"}
+	if len(cmd.Args) < len(wantTail) || !reflect.DeepEqual(cmd.Args[len(cmd.Args)-len(wantTail):], wantTail) {
+		t.Fatalf("Claude Python args = %q, want tail %q", cmd.Args, wantTail)
+	}
+}
+
+func TestCodexPythonCommandUsesFixedLoopbackPort(t *testing.T) {
+	cmd := codexPythonCommand("/usr/bin/python3", "/tmp/acc-config", 9999)
+	wantTail := []string{"--config-root", "/tmp/acc-config", "--port", "9999"}
+	if len(cmd.Args) < len(wantTail) || !reflect.DeepEqual(cmd.Args[len(cmd.Args)-len(wantTail):], wantTail) {
+		t.Fatalf("Codex Python args = %q, want tail %q", cmd.Args, wantTail)
+	}
+	if cmd.Args[0] != "nohup" || cmd.Args[1] != "/usr/bin/python3" {
+		t.Fatalf("Codex Python command = %q, want detached python3", cmd.Args[:2])
+	}
+}
+
+func TestCodexPythonRouteRequiresConfiguredAPIKey(t *testing.T) {
+	cfg := &Config{Providers: map[string]Provider{"nvidia": {BaseURL: "https://example.test/v1"}}}
+	if err := codexPythonRouteReady(cfg, "nvidia/test~smodel"); err == nil || !strings.Contains(err.Error(), "API key") {
+		t.Fatalf("missing API key error = %v", err)
+	}
+	cfg.Providers["nvidia"] = Provider{BaseURL: "https://example.test/v1", APIKey: "test"}
+	if err := codexPythonRouteReady(cfg, "nvidia/test~smodel"); err != nil {
+		t.Fatalf("configured Python route rejected: %v", err)
 	}
 }
 

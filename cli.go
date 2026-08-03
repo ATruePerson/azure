@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	_ "embed"
 	"flag"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -18,6 +20,9 @@ import (
 	"github.com/ATruePerson/acc/claude"
 	"github.com/ATruePerson/acc/codex"
 )
+
+//go:embed claude/proxy.py
+var claudeProxyPython string
 
 // providerInfo describes a known upstream provider for the setup wizard,
 // doctor health check, and default config generation.
@@ -80,7 +85,7 @@ Usage:
   acc doctor          Test that your provider keys work
   acc models          List the model names you can use
   acc bench           Benchmark every persona, judged for quality
-  acc claude [args]   Start the proxy and launch Claude Code through it
+  acc claude [args]   Start the Python runtime and launch Claude Code through it
 	acc codex setup      Back up Codex and point it directly at ACC
 	acc codex start      Start an owned ACC service and verify Responses
 	acc codex stop       Stop only the ACC process started by this command
@@ -281,21 +286,19 @@ func cmdModels() {
 		cfg = c
 	}
 
-	fmt.Print("\n  Model names you can give Claude Code (set as the model):\n\n")
-	for _, d := range modelCatalog() {
-		fmt.Printf("  anthropic/%-26s → %s (%s)\n", d.Canonical, d.Route.Model, d.Route.Provider)
-	}
-	if cfg != nil && len(cfg.Aliases) > 0 {
-		fmt.Print("\n  Your custom aliases (from claude/config.json):\n\n")
+	fmt.Print("\n  Claude Code models (from claude/config.json):\n\n")
+	if cfg != nil && len(cfg.AliasRoutes) > 0 {
 		var names []string
-		for k := range cfg.Aliases {
+		for k := range cfg.AliasRoutes {
 			names = append(names, k)
 		}
 		sort.Strings(names)
 		for _, k := range names {
-			r := cfg.Aliases[k]
-			fmt.Printf("  anthropic/%-26s → %s (%s)\n", normalizeModelID(k), r.Model, r.Provider)
+			r := cfg.AliasRoutes[k]
+			fmt.Printf("  anthropic/claude-%-19s → %s (%s)\n", normalizeModelID(k), r.Model, r.Provider)
 		}
+	} else {
+		fmt.Print("  No Claude alias routes configured.\n")
 	}
 	if cfg != nil && len(cfg.Models) > 0 {
 		fmt.Print("\n  Codex models (from codex/config.json):\n\n")
@@ -303,39 +306,24 @@ func cmdModels() {
 			fmt.Printf("  %-26s -> %s (%s)\n", model.ID, model.Route.Model, model.Route.Provider)
 		}
 	}
-	fmt.Print("\n  Or use the family names (opus / sonnet / haiku) — those follow claude/config.json routes.\n\n")
+	fmt.Println()
 }
 
 // ---------- claude launcher ----------
 
 func cmdClaude(extra []string) {
-	cfg, err := loadConfig(defaultConfigPath())
+	_, err := loadConfig(defaultConfigPath())
 	if err != nil {
 		fmt.Printf("  No config found. Run `acc setup` first. (%v)\n", err)
 		return
 	}
 	loadDotenv(defaultEnvPath())
 
-	base := fmt.Sprintf("http://localhost:%d", cfg.Port)
-	if !proxyAlive(base) {
-		fmt.Printf("  Starting acc on port %d...\n", cfg.Port)
-		if err := startProxyDetached(); err != nil {
-			fmt.Printf("  Could not start acc: %v\n", err)
-			return
-		}
-		if !waitForProxy(base, 10*time.Second) {
-			fmt.Println("  acc did not come up in time. Try `acc` in another terminal.")
-			return
-		}
-	}
-
-	claude, err := exec.LookPath("claude")
+	claudePath, err := exec.LookPath("claude")
 	if err != nil {
-		fmt.Printf("  Claude Code not found on PATH. acc is running at %s —\n  set ANTHROPIC_BASE_URL=%s in your client.\n", base, base)
+		fmt.Println("  Claude Code not found on PATH.")
 		return
 	}
-
-	fmt.Printf("  Launching Claude Code through acc (%s)...\n\n", base)
 	self, err := os.Executable()
 	if err != nil {
 		fmt.Printf("  Could not locate acc for MCP tools: %v\n", err)
@@ -346,10 +334,94 @@ func cmdClaude(extra []string) {
 		fmt.Printf("  Could not prepare ACC MCP tools: %v\n", err)
 		return
 	}
-	cmd := exec.Command(claude, claudeArgsWithMCP(extra, mcpConfig)...)
+
+	proxy, base, err := startClaudePythonProxy()
+	if err != nil {
+		fmt.Printf("  Could not start the Claude Python runtime: %v\n", err)
+		return
+	}
+	defer func() {
+		_ = proxy.Process.Kill()
+		_, _ = proxy.Process.Wait()
+	}()
+
+	fmt.Printf("  Launching Claude Code through ACC Python (%s)...\n\n", base)
+	cmd := exec.Command(claudePath, claudeArgsWithMCP(extra, mcpConfig)...)
 	cmd.Env = append(os.Environ(), "ANTHROPIC_BASE_URL="+base)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	cmd.Run()
+	_ = cmd.Run()
+}
+
+func claudePythonCommand(python, configRoot string) *exec.Cmd {
+	return exec.Command(python, "-c", claudeProxyPython, "--config-root", configRoot, "--port", "0")
+}
+
+func codexPythonCommand(python, configRoot string, port int) *exec.Cmd {
+	return detachedProxyCommand(python, "-c", claudeProxyPython, "--config-root", configRoot, "--port", strconv.Itoa(port))
+}
+
+func startCodexPythonDetachedWithPID(port int) (int, string, error) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		return 0, "", fmt.Errorf("python3 not found on PATH")
+	}
+	if err := os.MkdirAll(accDir(), 0700); err != nil {
+		return 0, "", err
+	}
+	logFile, err := os.OpenFile(filepath.Join(accDir(), "proxy.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		return 0, "", err
+	}
+	defer logFile.Close()
+	cmd := codexPythonCommand(python, accDir(), port)
+	cmd.Stdout, cmd.Stderr = logFile, logFile
+	if err := cmd.Start(); err != nil {
+		return 0, "", err
+	}
+	pid := cmd.Process.Pid
+	if err := cmd.Process.Release(); err != nil {
+		return 0, "", err
+	}
+	return pid, python, nil
+}
+
+func startClaudePythonProxy() (*exec.Cmd, string, error) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		return nil, "", fmt.Errorf("python3 not found on PATH")
+	}
+	cmd := claudePythonCommand(python, accDir())
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, "", err
+	}
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		return nil, "", err
+	}
+
+	type result struct {
+		line string
+		err  error
+	}
+	ready := make(chan result, 1)
+	go func() {
+		line, err := bufio.NewReader(stdout).ReadString('\n')
+		ready <- result{line: strings.TrimSpace(line), err: err}
+	}()
+	select {
+	case got := <-ready:
+		if got.err != nil || !strings.HasPrefix(got.line, "READY http://127.0.0.1:") {
+			_ = cmd.Process.Kill()
+			_, _ = cmd.Process.Wait()
+			return nil, "", fmt.Errorf("unexpected startup response %q: %v", got.line, got.err)
+		}
+		return cmd, strings.TrimPrefix(got.line, "READY "), nil
+	case <-time.After(10 * time.Second):
+		_ = cmd.Process.Kill()
+		_, _ = cmd.Process.Wait()
+		return nil, "", fmt.Errorf("startup timed out")
+	}
 }
 
 const codexExperimentalNotice = "EXPERIMENTAL: Codex integration is a work in progress and can still break. Run `acc codex restore` to return to your normal subscription."
@@ -440,8 +512,8 @@ func cmdCodexLegacy(args []string) {
 
 	base := fmt.Sprintf("http://localhost:%d", cfg.Port)
 	if !proxyAlive(base) {
-		fmt.Printf("  Starting acc on port %d...\n", cfg.Port)
-		if err := startProxyDetached(); err != nil {
+		fmt.Printf("  Starting ACC Python on port %d...\n", cfg.Port)
+		if _, _, err := startOwnedCodexProcess(base, cfg.Port); err != nil {
 			fmt.Printf("  Could not start acc: %v\n", err)
 			return
 		}
@@ -561,7 +633,7 @@ func startProxyDetachedWithPID() (int, string, error) {
 	}
 	defer logFile.Close()
 
-	executable := proxyExecutable(self)
+	executable := self
 	cmd := detachedProxyCommand(executable, "-config", defaultConfigPath(), "-env", defaultEnvPath())
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 	if err := cmd.Start(); err != nil {
@@ -581,14 +653,6 @@ func detachedProxyCommand(proxy string, args ...string) *exec.Cmd {
 	// keeps the proxy alive after the launching terminal command is gone.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	return cmd
-}
-
-func proxyExecutable(commandPath string) string {
-	managed := filepath.Join(filepath.Dir(commandPath), "acc-proxy")
-	if info, err := os.Stat(managed); err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0111 != 0 {
-		return managed
-	}
-	return commandPath
 }
 
 // defaultConfigJSON is the merged embedded split config for tests and tooling.

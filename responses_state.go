@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 )
 
 // rememberResponse keeps the small amount of state needed for
@@ -14,18 +15,19 @@ func (s *server) rememberResponse(response *ResponsesResponse) {
 		return
 	}
 	copyResponse := cloneResponsesResponse(response)
-	s.responsesMu.Lock()
 	if s.responses == nil {
-		s.responses = make(map[string]*ResponsesResponse)
+		s.responses = newMemoryResponseStore()
 	}
-	s.responses[response.ID] = copyResponse
-	s.responsesMu.Unlock()
+	if err := s.responses.Put(response.ID, copyResponse); err != nil {
+		log.Printf("response history: save failed: %v", err)
+	}
 }
 
 func (s *server) responseByID(id string) (*ResponsesResponse, bool) {
-	s.responsesMu.RLock()
-	response, ok := s.responses[id]
-	s.responsesMu.RUnlock()
+	if s.responses == nil {
+		return nil, false
+	}
+	response, ok := s.responses.Get(id)
 	if !ok {
 		return nil, false
 	}

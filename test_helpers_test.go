@@ -12,8 +12,10 @@ func (r *errReader) Read(p []byte) (int, error) {
 
 func testServer(cfg *Config) *server {
 	s := &server{
-		http:    &http.Client{},
-		limiter: newProviderRateLimiter(cfg),
+		http:          &http.Client{},
+		limiter:       newProviderRateLimiter(cfg),
+		responses:     newMemoryResponseStore(),
+		dashboardCSRF: "test-csrf",
 	}
 	s.cfg.Store(cfg)
 	return s

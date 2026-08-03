@@ -1,11 +1,11 @@
 package main
 
 import (
-	"github.com/ATruePerson/acc/claude"
-	"github.com/ATruePerson/acc/codex"
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/ATruePerson/acc/claude"
+	"github.com/ATruePerson/acc/codex"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -238,8 +238,6 @@ func TestStreamTranslateResponsesScannerErrorEmitsIncomplete(t *testing.T) {
 		t.Fatal("unexpected response.completed after scanner error")
 	}
 }
-
-
 
 func TestStreamTranslateResponsesDoneOnlyEmitsIncomplete(t *testing.T) {
 	w := httptest.NewRecorder()

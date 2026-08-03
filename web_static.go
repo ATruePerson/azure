@@ -4,6 +4,7 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -42,5 +43,17 @@ func (s *server) handleDashboardUI(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	http.SetCookie(w, &http.Cookie{
+		Name: "acc_dashboard_csrf", Value: s.dashboardCSRF, Path: "/dashboard/",
+		SameSite: http.SameSiteStrictMode, Secure: false, HttpOnly: false,
+	})
 	http.StripPrefix("/dashboard/", embeddedFileServer(dashboardWeb, "web/dashboard")).ServeHTTP(w, r)
+}
+
+func sameOrigin(origin, host string) bool {
+	if origin == "" {
+		return false
+	}
+	u, err := url.Parse(origin)
+	return err == nil && u.Scheme == "http" && u.Host == host
 }

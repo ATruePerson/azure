@@ -1,27 +1,35 @@
-.PHONY: build build-obsidian-plugin run tui test test-obsidian-plugin cover fmt vet lint clean
+.PHONY: build web-build web-check claude-python-check bench-python-check bench-report run tui test cover fmt vet lint clean
 
 # Build the acc binary into the current directory.
 build:
 	go build -o acc .
 
-# Build the standalone Obsidian plugin server. It is not part of ACC core.
-build-obsidian-plugin:
-	cd plugins/obsidian/server && go build -o ../bin/obsidian-mcp .
+web-build:
+	npm run build:web
 
-# Run the proxy against the local config.json.
+web-check:
+	npm run check:web
+
+claude-python-check:
+	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest claude/test_proxy.py
+
+bench-python-check:
+	PYTHONPATH=benchmarks/python python3 -m unittest discover -s benchmarks/python/tests
+
+bench-report:
+	PYTHONPATH=benchmarks/python python3 -m acc_eval analyze --input benchmarks/model-routing/results.json --output-dir benchmarks/model-routing
+
+# Run the proxy against the default split config.
 run:
-	go run . -config config.json
+	go run .
 
 # Run with the interactive terminal dashboard.
 tui:
-	go run . -config config.json -tui
+	go run . -tui
 
 # Run the test suite with the race detector.
-test:
+test: claude-python-check
 	go test -race ./...
-
-test-obsidian-plugin:
-	cd plugins/obsidian/server && go test -race ./...
 
 # Test suite with coverage summary.
 cover:
@@ -42,7 +50,9 @@ lint: vet
 		echo "Needs gofmt:"; echo "$$unformatted"; exit 1; \
 	fi
 	go build ./...
+	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest claude/test_proxy.py
 	go test -race ./...
+	npm run check:web
 
 clean:
 	rm -f acc

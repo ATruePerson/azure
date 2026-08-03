@@ -7,6 +7,8 @@ acc
 .checkpoints/
 benchmarks/model-routing/raw-results/*.json
 benchmarks/model-routing/results.json
+benchmarks/model-routing/python-results.json
+benchmarks/model-routing/python-report.md
 
 # Environment files (contain real API keys)
 .env
@@ -17,6 +19,15 @@ auth.json
 # Go
 go.work
 go.work.sum
+
+# TypeScript build dependencies
+node_modules/
+__pycache__/
+*.py[cod]
+
+# Local encrypted response history
+responses.key
+responses.json.enc
 
 # Editor
 *.swp

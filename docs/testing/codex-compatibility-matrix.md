@@ -15,8 +15,7 @@ means a real provider or Codex client is still needed.
 | Claude/Grok credential import | Verified, explicit only | Read-only detection; never automatic |
 | Responses unary and SSE | Verified | Text, reasoning, tools, usage, terminal states |
 | Custom, namespace, apply_patch, and MCP tools | Verified | Existing normalized Responses suite |
-| `previous_response_id` | Verified, process-local | Restart invalidates stored IDs |
+| `previous_response_id` | Verified, encrypted local store | 100-entry / 24-hour retention; config-root key |
 | Fallback and exact effort mapping | Verified | Explicit Codex chains only |
 | OAuth provider smoke requests | Live required | Requires user-approved login or existing secure credentials |
 | Codex Desktop end-to-end run | Live required | Requires temporary safe config and provider request |
-| Durable response history across restart | Not implemented | Store remains process-local |

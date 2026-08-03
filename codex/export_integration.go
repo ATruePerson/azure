@@ -16,7 +16,9 @@ func HomeDir() (string, error) { return codexHomeDir() }
 func InspectRouting(config string) RoutingState { return inspectCodexRouting(config) }
 
 // BaselineStatus describes whether a subscription baseline is present.
-func BaselineStatus(path, currentConfig string) string { return codexBaselineStatus(path, currentConfig) }
+func BaselineStatus(path, currentConfig string) string {
+	return codexBaselineStatus(path, currentConfig)
+}
 
 // BeginConfigureApp starts a staged Codex configure transaction.
 func BeginConfigureApp(configPath, catalogPath, baselinePath, restartPath, baseURL, model string, cfg *Config, auth AuthManager) (*ConfigTransaction, error) {

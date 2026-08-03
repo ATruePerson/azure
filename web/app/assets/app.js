@@ -52,9 +52,7 @@ const scriptConsole = document.getElementById('applescript-widget-console');
 // ----------------------------------------------------
 async function checkTrueoxConnection() {
   try {
-    const response = await fetch(TRUEOX_URL + '/api/tools', { method: 'GET' });
-    if (response.ok) {
-      const data = await response.json();
+    if (await TrueoxAPI.checkConnection()) {
       if (!isConnected) {
         showToast('Connected to Trueox macOS backend!', 'success');
       }
@@ -63,9 +61,7 @@ async function checkTrueoxConnection() {
       statusText.innerText = 'Trueox: ONLINE';
       offlineBanner.style.display = 'none';
       settingsOfflineWarning.style.display = 'none';
-    } else {
-      setOffline();
-    }
+    } else setOffline();
   } catch (err) {
     setOffline();
   }
@@ -405,34 +401,8 @@ async function submitUserPrompt() {
       payload.model = selectModel.value;
     }
 
-    const response = await fetch(TRUEOX_URL + '/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      throw new Error('HTTP Error ' + response.status);
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder('utf-8');
-    let buffer = '';
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop(); // Hold onto final incomplete fragment
-
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        try {
-          const packet = JSON.parse(line);
-          
-          if (packet.step) {
+    await TrueoxAPI.streamChat(payload, (packet) => {
+      if (packet.step) {
             // Live visual system tool executions
             collectedSteps.push(packet.step);
             
@@ -443,7 +413,7 @@ async function submitUserPrompt() {
             lucide.createIcons();
             scrollToBottom();
 
-          } else if (packet.action_start) {
+      } else if (packet.action_start) {
             const toolName = packet.action_start.name;
             const toolArgs = JSON.stringify(packet.action_start.arguments || {});
             const stepText = "Calling " + toolName + " with " + toolArgs;
@@ -456,7 +426,7 @@ async function submitUserPrompt() {
             lucide.createIcons();
             scrollToBottom();
 
-          } else if (packet.action_complete) {
+      } else if (packet.action_complete) {
             const toolName = packet.action_complete.name;
             const toolResult = typeof packet.action_complete.result === 'object' ? JSON.stringify(packet.action_complete.result) : packet.action_complete.result;
             const stepText = "Completed " + toolName + " with result: " + toolResult;
@@ -470,7 +440,7 @@ async function submitUserPrompt() {
             lucide.createIcons();
             scrollToBottom();
 
-          } else if (packet.response || packet.text) {
+      } else if (packet.response || packet.text) {
             const text = packet.response || packet.text;
             if (contentDiv.innerHTML.includes('Thinking...')) {
               contentDiv.innerHTML = '';
@@ -479,12 +449,12 @@ async function submitUserPrompt() {
             contentDiv.innerHTML = formatMarkdown(assistantContent);
             scrollToBottom();
 
-          } else if (packet.done) {
+      } else if (packet.done) {
             if (contentDiv.innerHTML.includes('Thinking...')) {
               contentDiv.innerHTML = '<span style="color: var(--text-gray); font-style: italic;">Command execution completed.</span>';
             }
 
-          } else if (packet.error) {
+      } else if (packet.error) {
             const errorBlock = document.createElement('div');
             errorBlock.className = 'agent-step-block';
             errorBlock.style.borderLeftColor = 'var(--red)';
@@ -492,12 +462,8 @@ async function submitUserPrompt() {
             stepsContainer.appendChild(errorBlock);
             lucide.createIcons();
             scrollToBottom();
-          }
-        } catch (err) {
-          console.warn('NDJSON parsing error', err, line);
-        }
       }
-    }
+    });
   } catch (err) {
     console.error(err);
     contentDiv.innerHTML = '<span style="color: var(--red);">Error connecting to Trueox. Make sure the server on port 8000 is online.</span>';
@@ -523,9 +489,8 @@ async function submitUserPrompt() {
 // ----------------------------------------------------
 async function loadSettingsFromTrueox() {
   try {
-    const res = await fetch(TRUEOX_URL + '/api/settings', { method: 'GET' });
-    if (res.ok) {
-      const keys = await res.json();
+    const keys = await TrueoxAPI.loadSettings();
+    if (keys) {
       document.getElementById('key-gemini').value = keys.gemini_api_key || keys.GEMINI_API_KEY || '';
       document.getElementById('key-groq').value = keys.groq_api_key || keys.GROQ_API_KEY || '';
       document.getElementById('key-openrouter').value = keys.openrouter_api_key || keys.OPENROUTER_API_KEY || '';
@@ -533,8 +498,6 @@ async function loadSettingsFromTrueox() {
       document.getElementById('key-zai').value = keys.zai_api_key || keys.ZAI_API_KEY || '';
       document.getElementById('key-opencode').value = keys.opencode_api_key || keys.OPENCODE_API_KEY || '';
       showToast('Loaded active environment keys from Trueox .env!', 'success');
-    } else {
-      showToast('Could not fetch settings from backend.', 'error');
     }
   } catch (e) {
     showToast('Backend offline. Settings unloaded.', 'error');
@@ -560,18 +523,9 @@ async function saveSettingsToTrueox() {
   };
 
   try {
-    const res = await fetch(TRUEOX_URL + '/api/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    if (res.ok) {
-      showToast('Trueox .env settings updated!', 'success');
-      settingsOverlay.style.display = 'none';
-    } else {
-      showToast('Failed to save settings to server.', 'error');
-    }
+    await TrueoxAPI.saveSettings(payload);
+    showToast('Trueox .env settings updated!', 'success');
+    settingsOverlay.style.display = 'none';
   } catch (err) {
     showToast('Connection error writing settings.', 'error');
   }
@@ -583,22 +537,10 @@ async function saveSettingsToTrueox() {
 async function executeDirectTool(toolName, args, consoleEl) {
   consoleEl.innerHTML = '<span style="color: var(--gold);">> Running ' + toolName + '...</span>';
   try {
-    const res = await fetch(TRUEOX_URL + '/api/execute', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        tool_name: toolName,
-        arguments: args
-      })
-    });
-
-    if (res.ok) {
-      const data = await res.json();
+    const data = await TrueoxAPI.execute(toolName, args);
+    if (data) {
       consoleEl.innerHTML = '<span style="color: var(--green);">> Success</span>\n' + JSON.stringify(data.result || data, null, 2);
       showToast('Direct execution of ' + toolName + ' complete!', 'success');
-    } else {
-      const text = await res.text();
-      consoleEl.innerHTML = '<span style="color: var(--red);">> Failed (HTTP ' + res.status + ')</span>\n' + text;
     }
   } catch (err) {
     consoleEl.innerHTML = '<span style="color: var(--red);">> Error: Connection Refused</span>';

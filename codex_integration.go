@@ -67,6 +67,21 @@ func defaultCodexModelFor(cfg *Config, auth *authManager) (string, error) {
 	return models[0].ID, nil
 }
 
+func codexPythonRouteReady(cfg *Config, model string) error {
+	providerName, _, ok := codex.DecodeCodexSlug(model)
+	if !ok {
+		return fmt.Errorf("invalid Codex model %q", model)
+	}
+	provider, ok := cfg.Providers[providerName]
+	if !ok || strings.TrimSpace(provider.BaseURL) == "" {
+		return fmt.Errorf("Python Codex runtime has no configured provider %q", providerName)
+	}
+	if strings.TrimSpace(provider.APIKey) == "" {
+		return fmt.Errorf("Python Codex runtime currently requires an API key for provider %q", providerName)
+	}
+	return nil
+}
+
 func configureNativeCodex(cfg *Config, auth *authManager, model string) error {
 	if model == "" {
 		var err error
@@ -259,6 +274,10 @@ func cmdCodexLifecycle(args []string) {
 		fmt.Printf("  Unknown or unavailable real model %q. Run `acc models`.\n", model)
 		return
 	}
+	if err := codexPythonRouteReady(cfg, model); err != nil {
+		fmt.Printf("  Cannot use %s: %v\n", model, err)
+		return
+	}
 	configPath, catalogPath, restorePath, err := codexPaths()
 	if err != nil {
 		fmt.Printf("  Could not locate Codex settings: %v\n", err)
@@ -277,7 +296,7 @@ func cmdCodexLifecycle(args []string) {
 	}
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", cfg.Port)
-	_, newlyStarted, startErr := startOwnedCodexProcess(base)
+	_, newlyStarted, startErr := startOwnedCodexProcess(base, cfg.Port)
 	if startErr != nil {
 		_ = tx.Rollback()
 		fmt.Printf("  Could not start ACC-owned Codex service: %v\n", startErr)
@@ -449,7 +468,7 @@ func processMatchesOwnership(ownership codexProcessOwnership) bool {
 	return fields[0] == ownership.Executable || actual != "" && expected != "" && actual == expected
 }
 
-func startOwnedCodexProcess(base string) (codexProcessOwnership, bool, error) {
+func startOwnedCodexProcess(base string, port int) (codexProcessOwnership, bool, error) {
 	path := codexPIDPath()
 	if ownership, err := readCodexProcessOwnership(path); err == nil {
 		if processMatchesOwnership(ownership) {
@@ -471,7 +490,7 @@ func startOwnedCodexProcess(base string) (codexProcessOwnership, bool, error) {
 	if proxyAlive(base) {
 		return codexProcessOwnership{}, false, fmt.Errorf("an unowned process is already serving %s; stop it before `acc codex start`", base)
 	}
-	pid, executable, err := startProxyDetachedWithPID()
+	pid, executable, err := startCodexPythonDetachedWithPID(port)
 	if err != nil {
 		return codexProcessOwnership{}, false, err
 	}

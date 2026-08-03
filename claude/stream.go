@@ -108,7 +108,8 @@ func streamTranslate(w http.ResponseWriter, body io.Reader, model string) (int, 
 			continue
 		}
 		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-		if payload == "[DONE]" { sawDone = true
+		if payload == "[DONE]" {
+			sawDone = true
 			break
 		}
 
@@ -170,7 +171,7 @@ func streamTranslate(w http.ResponseWriter, body io.Reader, model string) (int, 
 				bi = nextIndex
 				nextIndex++
 				toolBlocks[tc.Index] = bi
-			sawUsableOutput = true
+				sawUsableOutput = true
 				thoughtSig := tc.Function.ThoughtSignature
 				if tc.ExtraContent != nil && tc.ExtraContent.Google != nil && tc.ExtraContent.Google.ThoughtSignature != "" {
 					thoughtSig = tc.ExtraContent.Google.ThoughtSignature

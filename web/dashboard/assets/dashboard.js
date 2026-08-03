@@ -1,144 +1,114 @@
-lucide.createIcons();
-
-// Configuration
-const PORT = window.location.port || "9999";
-document.getElementById('portVal').innerText = PORT;
-
+"use strict";
 let lastLogCount = -1;
-
-// Fetch and render logs
-async function updateDashboard() {
-  try {
-    const res = await fetch('/dashboard/api/logs');
-    if (!res.ok) throw new Error("Fetch failed");
-    
-    const data = await res.json();
-    
-    // Update Uptime
-    document.getElementById('uptimeVal').innerText = data.uptime;
-    
-    const logs = data.logs || [];
-    
-    // Only re-render if the count of logs changed to avoid flashing
-    if (logs.length !== lastLogCount) {
-      renderLogs(logs);
-      lastLogCount = logs.length;
-    }
-  } catch (err) {
-    console.error("Error updating dashboard:", err);
-  }
+function element(id) {
+    const node = document.getElementById(id);
+    if (!node)
+        throw new Error(`Missing dashboard element #${id}`);
+    return node;
 }
-
+function csrfToken() {
+    const cookie = document.cookie.split("; ").find((part) => part.startsWith("acc_dashboard_csrf="));
+    return cookie?.slice("acc_dashboard_csrf=".length) ?? "";
+}
+async function dashboardRequest(path, init = {}) {
+    const headers = new Headers(init.headers);
+    if (init.method && init.method !== "GET") {
+        headers.set("X-ACC-CSRF", csrfToken());
+    }
+    const response = await fetch(path, { ...init, headers });
+    if (!response.ok)
+        throw new Error(`Dashboard request failed: ${response.status}`);
+    if (response.status === 204)
+        return undefined;
+    const body = await response.text();
+    if (!body.trim())
+        return undefined;
+    return JSON.parse(body);
+}
+function escapeHTML(value) {
+    return value.replace(/[&<>'"]/g, (character) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;",
+    })[character] ?? character);
+}
 function renderLogs(logs) {
-  const container = document.getElementById('logsContainer');
-  
-  if (logs.length === 0) {
-    container.innerHTML = '<div class="no-logs"><i data-lucide="inbox" size="32"></i><p>No transactions captured yet. Launch queries from your terminal or client!</p></div>';
+    const container = element("logsContainer");
+    if (logs.length === 0) {
+        container.innerHTML = '<div class="no-logs"><i data-lucide="inbox" size="32"></i><p>No transactions captured yet. Launch queries from your terminal or client!</p></div>';
+        lucide.createIcons();
+        return;
+    }
+    const rows = [...logs].reverse().map((log, index) => {
+        const isNew = index === 0 && lastLogCount !== -1;
+        const statusClass = log.Status >= 400 ? "err" : "ok";
+        const statusText = log.Status >= 400 ? `${log.Status} ERR` : `${log.Status} OK`;
+        const icon = log.Status >= 400 ? "alert-triangle" : "check-circle";
+        const time = new Date(log.Timestamp).toTimeString().split(" ")[0];
+        return `<tr ${isNew ? 'class="new-row"' : ""}>
+      <td class="time-col">${time}</td>
+      <td class="model-name">${escapeHTML(log.Model)}</td>
+      <td class="route-target">${escapeHTML(log.Route)}</td>
+      <td><span class="status-badge ${statusClass}"><i data-lucide="${icon}" size="12"></i>${statusText}</span></td>
+      <td><span class="tokens-pill">${log.TokensIn}</span></td>
+      <td><span class="tokens-pill">${log.TokensOut}</span></td>
+    </tr>`;
+    }).join("");
+    container.innerHTML = `<table><thead><tr><th>Timestamp</th><th>Requested Model</th><th>Translated Route</th><th>Status</th><th>Input Tokens</th><th>Output Tokens</th></tr></thead><tbody>${rows}</tbody></table>`;
     lucide.createIcons();
-    return;
-  }
-
-  // Reverse logs to show newest first
-  const reversedLogs = [...logs].reverse();
-
-  let html = '<table>' +
-    '<thead>' +
-      '<tr>' +
-        '<th>Timestamp</th>' +
-        '<th>Requested Model</th>' +
-        '<th>Translated Route</th>' +
-        '<th>Status</th>' +
-        '<th>Input Tokens</th>' +
-        '<th>Output Tokens</th>' +
-      '</tr>' +
-    '</thead>' +
-    '<tbody>';
-
-  reversedLogs.forEach((log, index) => {
-    const isNew = index === 0 && lastLogCount !== -1;
-    const rowClass = isNew ? 'class="new-row"' : '';
-    
-    const date = new Date(log.Timestamp);
-    const timeStr = date.toTimeString().split(' ')[0];
-
-    const statusClass = log.Status >= 400 ? 'err' : 'ok';
-    const statusText = log.Status >= 400 ? log.Status + ' ERR' : log.Status + ' OK';
-
-    html += '<tr ' + rowClass + '>' +
-      '<td class="time-col">' + timeStr + '</td>' +
-      '<td class="model-name">' + escapeHTML(log.Model) + '</td>' +
-      '<td class="route-target">' + escapeHTML(log.Route) + '</td>' +
-      '<td>' +
-        '<span class="status-badge ' + statusClass + '">' +
-          '<i data-lucide="' + (log.Status >= 400 ? 'alert-triangle' : 'check-circle') + '" size="12"></i>' +
-          statusText +
-        '</span>' +
-      '</td>' +
-      '<td><span class="tokens-pill">' + log.TokensIn + '</span></td>' +
-      '<td><span class="tokens-pill">' + log.TokensOut + '</span></td>' +
-    '</tr>';
-  });
-
-  html += '</tbody></table>';
-
-  container.innerHTML = html;
-  lucide.createIcons();
 }
-
-function escapeHTML(str) {
-  if (!str) return '';
-  return str.replace(/[&<>'"]/g, 
-    tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
-  );
-}
-
-// Action: Clear Logs
-document.getElementById('clearBtn').addEventListener('click', async () => {
-  try {
-    const res = await fetch('/dashboard/api/clear', { method: 'POST' });
-    if (res.ok) {
-      updateDashboard();
-    }
-  } catch (err) {
-    console.error("Clear logs failed:", err);
-  }
-});
-
-// Action: Restart Proxy
-document.getElementById('restartBtn').addEventListener('click', async () => {
-  const overlay = document.getElementById('restartOverlay');
-  overlay.classList.add('active');
-
-  try {
-    await fetch('/dashboard/api/restart', { method: 'POST' });
-  } catch (err) {
-    // Expected network disruption due to stop/start
-  }
-
-  // Poll health endpoint until it comes back online
-  let checkCount = 0;
-  const interval = setInterval(async () => {
-    checkCount++;
+async function updateDashboard() {
     try {
-      const res = await fetch('/health');
-      const txt = await res.text();
-      if (res.ok && txt.includes("acc-proxy")) {
-        clearInterval(interval);
-        setTimeout(() => {
-          window.location.reload();
-        }, 1000);
-      }
-    } catch (err) {
-      // Keep trying
+        const data = await dashboardRequest("/dashboard/api/logs");
+        element("uptimeVal").innerText = data.uptime;
+        if (data.logs.length !== lastLogCount) {
+            renderLogs(data.logs);
+            lastLogCount = data.logs.length;
+        }
     }
-
-    if (checkCount > 40) { // Timeout after 20 seconds
-      clearInterval(interval);
-      overlay.querySelector('p').innerText = "Restart is taking longer than expected. Please manually reload the page.";
+    catch (error) {
+        console.error("Error updating dashboard:", error);
     }
-  }, 500);
-});
-
-// Start Polling loop
-setInterval(updateDashboard, 1000);
-updateDashboard();
+}
+async function clearLogs() {
+    try {
+        await dashboardRequest("/dashboard/api/clear", { method: "POST" });
+        lastLogCount = -1;
+        await updateDashboard();
+    }
+    catch (error) {
+        console.error("Clear logs failed:", error);
+    }
+}
+async function restartProxy() {
+    const overlay = element("restartOverlay");
+    overlay.classList.add("active");
+    try {
+        await dashboardRequest("/dashboard/api/restart", { method: "POST" });
+    }
+    catch {
+        // Expected network disruption while the proxy restarts.
+    }
+    let checks = 0;
+    const interval = window.setInterval(async () => {
+        checks += 1;
+        try {
+            const response = await fetch("/health");
+            if (response.ok && (await response.text()).includes("acc-proxy")) {
+                window.clearInterval(interval);
+                window.setTimeout(() => window.location.reload(), 1000);
+            }
+        }
+        catch {
+            // Keep polling while the process is down.
+        }
+        if (checks > 40) {
+            window.clearInterval(interval);
+            element("restartOverlay").querySelector("p").innerText = "Restart is taking longer than expected. Please manually reload the page.";
+        }
+    }, 500);
+}
+element("portVal").innerText = window.location.port || "9999";
+element("clearBtn").addEventListener("click", () => void clearLogs());
+element("restartBtn").addEventListener("click", () => void restartProxy());
+lucide.createIcons();
+window.setInterval(() => void updateDashboard(), 1000);
+void updateDashboard();

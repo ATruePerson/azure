@@ -28,8 +28,9 @@ acc codex
 ```
 
 `acc setup` stores keys in `~/.config/acc/.env` and creates a config file if
-one does not exist. `acc claude` starts the gateway when needed and launches
-Claude Code with the right connection. `acc codex` creates or preserves a
+one does not exist. `acc claude` starts a short-lived Python 3 compatibility
+runtime on a free loopback port and launches Claude Code through it. `acc codex
+start` runs the same Python gateway on ACC's configured loopback port. `acc codex` creates or preserves a
 durable raw and sanitized subscription baseline, switches it to ACC, and
 reopens the existing ChatGPT desktop app.
 
@@ -41,9 +42,9 @@ reopens the existing ChatGPT desktop app.
 | `acc doctor` | Check whether configured provider keys work. |
 | `acc models` | List built-in model aliases and your config aliases. |
 | `acc bench` | Benchmark configured personas and fallbacks. |
-| `acc claude [args]` | Start ACC and launch Claude Code through it. |
+| `acc claude [args]` | Start the Python Claude runtime and launch Claude Code through it. |
 | `acc codex setup` | Back up Codex and point it directly at ACC. |
-| `acc codex start` | Start an owned ACC process and verify Responses readiness. |
+| `acc codex start` | Start the owned Python Responses gateway and verify readiness. |
 | `acc codex status` | Show safe config, catalog, process, and provider status. |
 | `acc codex doctor` | Run non-destructive direct-integration checks. |
 | `acc codex restore` | Restore the durable sanitized subscription baseline. |
@@ -65,8 +66,8 @@ ACC includes two safe-by-default local MCP servers for Claude Code:
   when a folder path and exact title identify the note. `notes_recent` returns
   the newest 1, 3, or 7 notes from a specific folder.
 
-Obsidian is deliberately separate from ACC core. Its standalone Codex plugin,
-server, skills, and build instructions live in [`plugins/obsidian`](plugins/obsidian/README.md).
+Obsidian integration is deliberately separate from ACC core and is maintained
+outside this repository.
 
 `acc claude` creates `~/.config/acc/mcp.json` when missing and passes it through
 Claude Code's `--mcp-config` option in strict mode. That keeps older global MCP
@@ -94,7 +95,8 @@ acc mcp install --claude-3p --include-obsidian
 ```
 
 This adds Claude's `obsidian` MCP entry without moving or copying the plugin.
-The plugin's skills and server stay together under `plugins/obsidian`.
+The plugin's skills and server remain in the separately maintained Obsidian
+integration.
 
 The unrestricted `acc-osascript` server is bundled but disabled by default.
 Enable it only when you need arbitrary AppleScript or JXA:
@@ -214,6 +216,15 @@ models use the efforts declared under `models.<id>.reasoning`.
 - Live terminal and web dashboards with request logs.
 - Config validation before the gateway starts.
 
+### Language boundaries
+
+- Python owns live Claude Messages and Codex Responses translation, exact
+  API-key provider routing, tools, and SSE completion semantics.
+- Go owns launch/stop/restore, Codex config and catalog surgery, OAuth tooling,
+  MCP, the legacy gateway, and encrypted legacy response state.
+- TypeScript owns the embedded browser clients and their typed API clients.
+- Python also owns benchmark analysis and report generation.
+
 ## Model traits
 
 Known provider and model behaviors to be aware of:
@@ -274,7 +285,7 @@ the main agent guide.
 ### Live paths
 
 - Source: this repository
-- Commands: `~/.local/bin/acc` and `~/.local/bin/acc-proxy`
+- Command: `~/.local/bin/acc`
 - Runtime config root: `~/.config/acc/` (`providers.json`, `claude/`, `codex/`)
 - Secrets: `~/.config/acc/.env`
 - Alias prompts: `~/.config/acc/claude/system_prompts/`
@@ -293,8 +304,8 @@ catalog, request shape, or desktop behavior. Preserve the reversible
   `/Applications/ChatGPT.app/Contents/Resources/codex app` command: when a
   separate app bundle is absent, that command downloads another 587 MB installer
   and creates `/Applications/Codex.app`.
-- When a command needs to start the background gateway, it prefers the sibling
-  `acc-proxy` binary so `acc-stop` / `acc-restart` can manage the process.
+- Legacy `acc-start` launches the same `acc` binary in the background;
+  `acc-stop` / `acc-restart` manage that process without a duplicate executable.
 - ACC backs up the existing Codex config, writes an ownership-marked direct ACC
   Responses provider, and preserves unrelated projects, MCPs, and preferences.
 - Codex 0.144.2 enables hosted web search by default even when a model catalog
@@ -320,8 +331,8 @@ requested model/effort plus actual provider and backend model.
 ### Plugins, Sites, and scheduled tasks
 
 - Claude Code loads ACC's local MCP bundle from `~/.config/acc/mcp.json` via
-  `--mcp-config --strict-mcp-config`. Obsidian stays a separate plugin under
-  `plugins/obsidian`.
+  `--mcp-config --strict-mcp-config`. Obsidian stays a separately maintained
+  plugin.
 - Claude-3p uses
   `~/Library/Application Support/Claude-3p/claude_desktop_config.json`;
   `acc mcp install --claude-3p` merges ACC servers there.
@@ -341,7 +352,9 @@ exactly restorable.
 
 Native Kimi and xAI credentials live in macOS Keychain. Anthropic API keys
 remain the stable path. Existing official Claude/Grok credentials are read only
-after an explicit import command.
+after an explicit import command. The Python Codex runtime currently accepts
+configured API-key providers only and rejects a Keychain-only route before it
+changes Codex settings.
 
 ### Verification
 

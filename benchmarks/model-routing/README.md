@@ -26,3 +26,14 @@ go run ./benchmarks/model-routing/runner -profile core -models bench-opencode-bi
 Raw runs are written to `raw-results/`. `results.json` and `report.md` are
 regenerated from the current invocation. Provider limits may justify fewer than
 five important-tool runs; every skipped or failed run remains explicit.
+
+The Go runner owns live request execution. For deeper statistical analysis,
+run the Python evaluation layer after a benchmark:
+
+```bash
+make bench-report
+```
+
+It writes ignored `python-results.json` and `python-report.md` files with
+percentile latency, category accuracy, failure classes, tool-schema errors, and
+repair metrics.

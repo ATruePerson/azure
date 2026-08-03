@@ -25,6 +25,10 @@ func (s *server) handleDashboardClear(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", 405)
 		return
 	}
+	if !s.validDashboardMutation(r) {
+		http.Error(w, "dashboard mutation requires a same-origin CSRF token", http.StatusForbidden)
+		return
+	}
 	tuiLogsMu.Lock()
 	tuiLogs = nil
 	tuiLogsMu.Unlock()
@@ -36,11 +40,26 @@ func (s *server) handleDashboardRestart(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "Method not allowed", 405)
 		return
 	}
+	if !s.validDashboardMutation(r) {
+		http.Error(w, "dashboard mutation requires a same-origin CSRF token", http.StatusForbidden)
+		return
+	}
 	w.WriteHeader(200)
 	go func() {
 		time.Sleep(500 * time.Millisecond)
 		exec.Command("acc-restart").Run()
 	}()
+}
+
+func (s *server) validDashboardMutation(r *http.Request) bool {
+	if s.dashboardCSRF == "" || r.Header.Get("X-ACC-CSRF") != s.dashboardCSRF {
+		return false
+	}
+	cookie, err := r.Cookie("acc_dashboard_csrf")
+	if err != nil || cookie.Value != s.dashboardCSRF {
+		return false
+	}
+	return sameOrigin(r.Header.Get("Origin"), r.Host)
 }
 
 func (s *server) handleDashboardInfo(w http.ResponseWriter, r *http.Request) {

@@ -41,11 +41,11 @@ func TestRouteForTarget(t *testing.T) {
 	}
 
 	cases := []struct {
-		name        string
-		target      benchTarget
-		wantModel   string
+		name         string
+		target       benchTarget
+		wantModel    string
 		wantProvider string
-		wantErr     bool
+		wantErr      bool
 	}{
 		{"resolves alias", benchTarget{AliasKey: "anthropic/claude-opus"}, "nemotron-3-ultra-550b-a55b", "nvidia", false},
 		{"unknown alias", benchTarget{AliasKey: "anthropic/claude-ghost"}, "", "", true},

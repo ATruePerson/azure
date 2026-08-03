@@ -1,9 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"github.com/ATruePerson/acc/claude"
 	"github.com/ATruePerson/acc/codex"
-	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -323,7 +323,7 @@ func TestReasoningLockedKeepsProviderMaximum(t *testing.T) {
 
 func TestValidateConfigChecksAliasRouteProviders(t *testing.T) {
 	cfg := &Config{
-		Providers:   map[string]Provider{"openrouter": {}},
+		Providers: map[string]Provider{"openrouter": {}},
 		AliasRoutes: map[string]Route{
 			"opus": {Provider: "missing", Model: "x"},
 		},

@@ -1,0 +1,14 @@
+{
+  "name": "acc-web",
+  "private": true,
+  "description": "TypeScript build for ACC's embedded browser clients",
+  "scripts": {
+    "build:web": "npm run build:web:app && npm run build:web:dashboard",
+    "build:web:app": "tsc -p web/tsconfig.app.json",
+    "build:web:dashboard": "tsc -p web/tsconfig.dashboard.json",
+    "check:web": "tsc --noEmit -p web/tsconfig.app.json && tsc --noEmit -p web/tsconfig.dashboard.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2"
+  }
+}

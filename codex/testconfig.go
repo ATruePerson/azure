@@ -1,9 +1,9 @@
 package codex
 
 const (
-	codexOpusID    = "opus"
-	codexSonnetID  = "sonnet"
-	codexHaikuID   = "haiku"
+	codexOpusID   = "opus"
+	codexSonnetID = "sonnet"
+	codexHaikuID  = "haiku"
 )
 
 // TestConfig returns a sample configuration for use in tests.

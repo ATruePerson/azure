@@ -19,7 +19,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -124,10 +123,19 @@ func main() {
 		log.Printf("auth: %v", authErr)
 	}
 	s := &server{
-		cfgPath: path,
-		http:    newUpstreamHTTPClient(),
-		limiter: newProviderRateLimiter(cfg),
-		auth:    auth,
+		cfgPath:       path,
+		http:          newUpstreamHTTPClient(),
+		limiter:       newProviderRateLimiter(cfg),
+		auth:          auth,
+		responses:     newMemoryResponseStore(),
+		dashboardCSRF: randID(),
+	}
+	if root, rootErr := configRootFromPath(path); rootErr == nil {
+		if store, storeErr := newFileResponseStore(root); storeErr != nil {
+			log.Printf("response history: persistent store disabled: %v", storeErr)
+		} else {
+			s.responses = store
+		}
 	}
 	s.cfg.Store(cfg)
 	if mod, statErr := configSourcesModTime(path); statErr == nil {
@@ -215,14 +223,14 @@ func newUpstreamHTTPClient() *http.Client {
 type server struct {
 	// cfg is hot-swappable: reloadIfChanged replaces the whole pointer when
 	// config.json changes on disk, so model edits take effect without a restart.
-	cfg         atomic.Pointer[Config]
-	cfgPath     string
-	cfgModNano  atomic.Int64
-	http        *http.Client
-	limiter     *providerRateLimiter
-	auth        *authManager
-	responsesMu sync.RWMutex
-	responses   map[string]*ResponsesResponse
+	cfg           atomic.Pointer[Config]
+	cfgPath       string
+	cfgModNano    atomic.Int64
+	http          *http.Client
+	limiter       *providerRateLimiter
+	auth          *authManager
+	responses     responseStore
+	dashboardCSRF string
 }
 
 // reloadIfChanged re-reads split (or legacy) config files when any watched
@@ -999,10 +1007,18 @@ func validateRouteProviders(label string, route Route, providers map[string]Prov
 
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, x-api-key, anthropic-version")
+		origin := r.Header.Get("Origin")
+		if origin != "" && sameOrigin(origin, r.Host) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, x-api-key, anthropic-version, X-ACC-CSRF")
+		}
 		if r.Method == "OPTIONS" {
+			if origin == "" || !sameOrigin(origin, r.Host) {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
 			w.WriteHeader(204)
 			return
 		}
