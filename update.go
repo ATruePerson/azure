@@ -19,15 +19,15 @@ import (
 )
 
 const (
-	accReleaseBaseURL  = "https://github.com/ATruePerson/acc/releases/latest/download"
-	maxUpdateArchive   = 128 << 20
-	maxUpdateBinary    = 256 << 20
-	maxUpdateChecksum  = 8 << 10
-	updateHTTPTimeout  = 2 * time.Minute
-	updateProbeTimeout = 10 * time.Second
+	azureReleaseBaseURL = "https://github.com/ATruePerson/azure/releases/latest/download"
+	maxUpdateArchive    = 128 << 20
+	maxUpdateBinary     = 256 << 20
+	maxUpdateChecksum   = 8 << 10
+	updateHTTPTimeout   = 2 * time.Minute
+	updateProbeTimeout  = 10 * time.Second
 )
 
-// update is intercepted before main's normal command dispatcher so older ACC
+// update is intercepted before main's normal command dispatcher so older Azure
 // builds can gain the updater without restructuring the existing CLI surface.
 func init() {
 	if len(os.Args) > 1 && os.Args[1] == "update" {
@@ -37,12 +37,12 @@ func init() {
 
 func runUpdateCommand(args []string, out, errOut io.Writer) int {
 	if len(args) != 0 {
-		fmt.Fprintln(errOut, "  Usage: acc update")
+		fmt.Fprintln(errOut, "  Usage: azure update")
 		return 2
 	}
 	asset, err := updateAssetName(runtime.GOOS, runtime.GOARCH)
 	if err != nil {
-		fmt.Fprintf(errOut, "  Cannot update ACC on this platform: %v\n", err)
+		fmt.Fprintf(errOut, "  Cannot update Azure on this platform: %v\n", err)
 		return 1
 	}
 	destination, err := updateDestination()
@@ -51,7 +51,7 @@ func runUpdateCommand(args []string, out, errOut io.Writer) int {
 		return 1
 	}
 	client := &http.Client{Timeout: updateHTTPTimeout}
-	archiveURL := accReleaseBaseURL + "/" + asset + ".tar.gz"
+	archiveURL := azureReleaseBaseURL + "/" + asset + ".tar.gz"
 	checksumURL := archiveURL + ".sha256"
 	fmt.Fprintf(out, "  Downloading the latest %s release...\n", asset)
 	archive, err := downloadUpdateFile(client, archiveURL, maxUpdateArchive)
@@ -81,10 +81,10 @@ func runUpdateCommand(args []string, out, errOut io.Writer) int {
 	}
 	if err := installUpdatedBinary(destination, binary); err != nil {
 		fmt.Fprintf(errOut, "  Could not install the update: %v\n", err)
-		fmt.Fprintln(errOut, "  Set ACC_BINDIR to a writable directory and try again.")
+		fmt.Fprintln(errOut, "  Set AZURE_BINDIR to a writable directory and try again.")
 		return 1
 	}
-	fmt.Fprintf(out, "  Updated ACC to the latest release at %s\n", destination)
+	fmt.Fprintf(out, "  Updated Azure to the latest release at %s\n", destination)
 	fmt.Fprintln(out, "  Your config, provider keys, Codex baseline, and authentication files were not changed.")
 	return 0
 }
@@ -98,22 +98,22 @@ func updateAssetName(goos, goarch string) (string, error) {
 	default:
 		return "", fmt.Errorf("unsupported architecture %q", goarch)
 	}
-	return fmt.Sprintf("acc-%s-%s", goos, goarch), nil
+	return fmt.Sprintf("azure-%s-%s", goos, goarch), nil
 }
 
 func updateDestination() (string, error) {
-	if bindir := strings.TrimSpace(os.Getenv("ACC_BINDIR")); bindir != "" {
+	if bindir := strings.TrimSpace(os.Getenv("AZURE_BINDIR")); bindir != "" {
 		absolute, err := filepath.Abs(bindir)
 		if err != nil {
 			return "", err
 		}
-		return filepath.Join(absolute, "acc"), nil
+		return filepath.Join(absolute, "azure"), nil
 	}
 	if executable, err := os.Executable(); err == nil {
 		if resolved, resolveErr := filepath.EvalSymlinks(executable); resolveErr == nil {
 			executable = resolved
 		}
-		if filepath.Base(executable) == "acc" && !strings.Contains(executable, "go-build") {
+		if filepath.Base(executable) == "azure" && !strings.Contains(executable, "go-build") {
 			return executable, nil
 		}
 	}
@@ -121,7 +121,7 @@ func updateDestination() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".local", "bin", "acc"), nil
+	return filepath.Join(home, ".local", "bin", "azure"), nil
 }
 
 func downloadUpdateFile(client *http.Client, url string, limit int64) ([]byte, error) {
@@ -129,7 +129,7 @@ func downloadUpdateFile(client *http.Client, url string, limit int64) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
-	request.Header.Set("User-Agent", "acc-updater")
+	request.Header.Set("User-Agent", "azure-updater")
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, err
@@ -204,7 +204,7 @@ func installUpdatedBinary(destination string, binary []byte) error {
 	if err := os.MkdirAll(directory, 0755); err != nil {
 		return err
 	}
-	temporary, err := os.CreateTemp(directory, ".acc-update-*")
+	temporary, err := os.CreateTemp(directory, ".azure-update-*")
 	if err != nil {
 		return err
 	}
@@ -249,7 +249,7 @@ func probeUpdatedBinary(path string) error {
 	if err != nil {
 		return fmt.Errorf("updated binary validation failed: %w", err)
 	}
-	if !strings.Contains(strings.ToLower(string(output)), "acc") {
+	if !strings.Contains(strings.ToLower(string(output)), "azure") {
 		return fmt.Errorf("updated binary returned unexpected help output")
 	}
 	return nil

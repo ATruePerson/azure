@@ -1,6 +1,6 @@
 # Binaries
-acc
-/acc-proxy
+azure
+/azure-proxy
 *.exe
 
 # Local checkpoints and generated benchmark output

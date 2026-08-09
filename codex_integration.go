@@ -32,21 +32,21 @@ func codexPaths() (configPath, catalogPath, restorePath string, err error) {
 	if err != nil {
 		return "", "", "", err
 	}
-	return filepath.Join(codexDir, "config.toml"), filepath.Join(codexDir, "acc-models.json"), filepath.Join(accDir(), "codex-restore.json"), nil
+	return filepath.Join(codexDir, "config.toml"), filepath.Join(codexDir, "azure-models.json"), filepath.Join(azureDir(), "codex-restore.json"), nil
 }
 
-func codexPIDPath() string { return filepath.Join(accDir(), "codex-service.json") }
+func codexPIDPath() string { return filepath.Join(azureDir(), "codex-service.json") }
 
-func codexRestartPath() string { return filepath.Join(accDir(), "codex-restart-required") }
+func codexRestartPath() string { return filepath.Join(azureDir(), "codex-restart-required") }
 
 func loadCodexRuntime() (*Config, *authManager, error) {
 	loadDotenv(defaultEnvPath())
 	cfg, err := loadConfig(defaultConfigPath())
 	if err != nil {
-		return nil, nil, fmt.Errorf("load ACC config: %w", err)
+		return nil, nil, fmt.Errorf("load Azure config: %w", err)
 	}
 	if err := validateConfig(cfg); err != nil {
-		return nil, nil, fmt.Errorf("validate ACC config: %w", err)
+		return nil, nil, fmt.Errorf("validate Azure config: %w", err)
 	}
 	auth, authErr := newDefaultAuthManager()
 	if authErr != nil {
@@ -161,10 +161,10 @@ func codexRestartRequired(path string) bool {
 
 func printCodexStatus() {
 	// Status only inspects Codex lifecycle state. It remains usable even when
-	// ACC's provider configuration is missing or currently invalid.
+	// Azure's provider configuration is missing or currently invalid.
 	status := codexIntegrationStatus(nil, nil)
 	fmt.Printf("  Mode: %s\n", status["mode"])
-	fmt.Printf("  ACC process: %s\n", status["acc_process"])
+	fmt.Printf("  Azure process: %s\n", status["acc_process"])
 	fmt.Printf("  Codex endpoint: %s\n", status["codex_endpoint"])
 	fmt.Printf("  Active model provider: %s\n", status["active_model_provider"])
 	fmt.Printf("  Active catalog: %s\n", status["active_catalog"])
@@ -185,7 +185,7 @@ func cmdCodexLifecycle(args []string) {
 			i++
 			model = args[i]
 		default:
-			fmt.Printf("  Unknown `acc codex %s` argument %q\n", command, args[i])
+			fmt.Printf("  Unknown `azure codex %s` argument %q\n", command, args[i])
 			return
 		}
 	}
@@ -197,7 +197,7 @@ func cmdCodexLifecycle(args []string) {
 	case "restore", "remove":
 		stopped, err := stopOwnedCodexProcess(codexPIDPath())
 		if err != nil {
-			fmt.Printf("  Could not stop the ACC-managed Codex service: %v\n", err)
+			fmt.Printf("  Could not stop the Azure-managed Codex service: %v\n", err)
 			return
 		}
 		result, err := restoreCodexSettingsDetailed()
@@ -211,7 +211,7 @@ func cmdCodexLifecycle(args []string) {
 			fmt.Println("  Restored the durable sanitized subscription baseline.")
 		}
 		if stopped {
-			fmt.Println("  Stopped the ACC process owned by `acc codex start`.")
+			fmt.Println("  Stopped the Azure process owned by `azure codex start`.")
 		}
 		fmt.Printf("  Subscription authentication files: %s\n", ternary(result.AuthUnchanged, "Unchanged", "Verification failed"))
 		fmt.Printf("  Restart ChatGPT required: %s. Fully quit and reopen ChatGPT Desktop before using Codex.\n", ternary(result.RestartRequired || codexRestartRequired(codexRestartPath()), "Yes", "No"))
@@ -219,20 +219,20 @@ func cmdCodexLifecycle(args []string) {
 	case "stop":
 		stopped, err := stopOwnedCodexProcess(codexPIDPath())
 		if err != nil {
-			fmt.Printf("  Could not stop the ACC-managed Codex service: %v\n", err)
+			fmt.Printf("  Could not stop the Azure-managed Codex service: %v\n", err)
 			return
 		}
 		if stopped {
-			fmt.Println("  Stopped the ACC process started by `acc codex start`.")
+			fmt.Println("  Stopped the Azure process started by `azure codex start`.")
 		} else {
-			fmt.Println("  No ACC-owned Codex process is running. Other ACC processes were left alone.")
+			fmt.Println("  No Azure-owned Codex process is running. Other Azure processes were left alone.")
 		}
 		return
 	}
 
 	cfg, auth, err := loadCodexRuntime()
 	if err != nil {
-		fmt.Printf("  Could not prepare ACC: %v\n", err)
+		fmt.Printf("  Could not prepare Azure: %v\n", err)
 		return
 	}
 	if command == "doctor" {
@@ -254,7 +254,7 @@ func cmdCodexLifecycle(args []string) {
 		}
 	}
 	if !isCodexModelWithAuth(cfg, auth, model) {
-		fmt.Printf("  Unknown or unavailable real model %q. Run `acc models`.\n", model)
+		fmt.Printf("  Unknown or unavailable real model %q. Run `azure models`.\n", model)
 		return
 	}
 	configPath, catalogPath, restorePath, err := codexPaths()
@@ -269,7 +269,7 @@ func cmdCodexLifecycle(args []string) {
 	}
 	if command == "setup" {
 		result := tx.Commit()
-		fmt.Printf("  Codex now points directly to ACC with %s. Nothing was started.\n", model)
+		fmt.Printf("  Codex now points directly to Azure with %s. Nothing was started.\n", model)
 		fmt.Printf("  Subscription baseline: %s. Restart ChatGPT required: %s.\n", ternary(result.BaselineCreated, "Created", "Preserved"), ternary(result.RestartRequired, "Yes", "No"))
 		return
 	}
@@ -278,7 +278,7 @@ func cmdCodexLifecycle(args []string) {
 	_, newlyStarted, startErr := startOwnedCodexProcess(base)
 	if startErr != nil {
 		_ = tx.Rollback()
-		fmt.Printf("  Could not start ACC-owned Codex service: %v\n", startErr)
+		fmt.Printf("  Could not start Azure-owned Codex service: %v\n", startErr)
 		return
 	}
 	fail := func(message string) {
@@ -292,7 +292,7 @@ func cmdCodexLifecycle(args []string) {
 		fmt.Println("  " + message + " Pre-command Codex files were restored.")
 	}
 	if err := validateCodexLoopbackBaseURL(codexFrontGatewayURL(cfg)); err != nil {
-		fail("ACC endpoint is not loopback-only.")
+		fail("Azure endpoint is not loopback-only.")
 		return
 	}
 	if !responsesEndpointReady(base) {
@@ -303,17 +303,17 @@ func cmdCodexLifecycle(args []string) {
 	catalogBody, catalogErr := os.ReadFile(catalogPath)
 	routing := inspectCodexRouting(string(configBody))
 	validCatalog, _ := validateCodexCatalog(catalogBody)
-	if configErr != nil || catalogErr != nil || routing.Mode != "ACC" || routing.Provider != "acc" || !validCatalog || !catalogHasCodexModel(catalogBody, model) {
-		fail("ACC configuration verification failed.")
+	if configErr != nil || catalogErr != nil || routing.Mode != "Azure" || routing.Provider != "azure" || !validCatalog || !catalogHasCodexModel(catalogBody, model) {
+		fail("Azure configuration verification failed.")
 		return
 	}
 	result := tx.Commit()
-	fmt.Printf("  Codex is using ACC directly at %s (%s). OpenCodex was not started.\n", codexFrontGatewayURL(cfg), model)
+	fmt.Printf("  Codex is using Azure directly at %s (%s). OpenCodex was not started.\n", codexFrontGatewayURL(cfg), model)
 	fmt.Printf("  Subscription baseline: %s. Restart ChatGPT required: %s.\n", ternary(result.BaselineCreated, "Created", "Preserved"), ternary(result.RestartRequired || codexRestartRequired(codexRestartPath()), "Yes", "No"))
 }
 
 func responsesEndpointReady(base string) bool {
-	request, _ := http.NewRequest(http.MethodPost, strings.TrimRight(base, "/")+"/v1/responses", strings.NewReader(`{"model":"__acc_probe__","input":"probe"}`))
+	request, _ := http.NewRequest(http.MethodPost, strings.TrimRight(base, "/")+"/v1/responses", strings.NewReader(`{"model":"__azure_probe__","input":"probe"}`))
 	request.Header.Set("Content-Type", "application/json")
 	client := &http.Client{Timeout: 3 * time.Second}
 	response, err := client.Do(request)
@@ -342,32 +342,32 @@ func runCodexDoctor(out io.Writer, cfg *Config, auth *authManager) bool {
 		fmt.Fprintf(out, "  %-4s %-26s %s\n", mark, name, detail)
 	}
 	check("Codex config syntax", configErr == nil && validateCodexConfigText(string(config)) == nil, configPath)
-	check("active routing mode", routing.Mode == "ACC" || routing.Mode == "Subscription", routing.Mode)
+	check("active routing mode", routing.Mode == "Azure" || routing.Mode == "Subscription", routing.Mode)
 	check("legacy OpenCodex routing", !routing.ActiveOpenCodex, "active port 10100/provider routing absent")
-	loopbackOK := routing.Mode != "ACC" || validateCodexLoopbackBaseURL(routing.Endpoint) == nil
+	loopbackOK := routing.Mode != "Azure" || validateCodexLoopbackBaseURL(routing.Endpoint) == nil
 	check("loopback binding", loopbackOK, routing.Endpoint)
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", cfg.Port)
 	running := proxyAlive(base)
 	owned := ownedCodexProcessRunning(codexPIDPath())
-	if routing.Mode == "ACC" {
-		check("ACC endpoint", running, base)
+	if routing.Mode == "Azure" {
+		check("Azure endpoint", running, base)
 		check("Responses compatibility", running && responsesEndpointReady(base), base+"/v1/responses")
 		activeCatalog := resolveCodexPath(routing.Catalog, configPath)
 		catalog, catalogErr := os.ReadFile(activeCatalog)
 		validCatalog, catalogDetail := validateCodexCatalog(catalog)
 		check("real-model catalog", catalogErr == nil && validCatalog, catalogDetail)
-		check("ACC process ownership", owned, codexPIDPath())
+		check("Azure process ownership", owned, codexPIDPath())
 	} else {
-		check("ACC endpoint", true, "not required in subscription mode")
+		check("Azure endpoint", true, "not required in subscription mode")
 		check("Responses compatibility", true, "not required in subscription mode")
 		check("real-model catalog", routing.Catalog == "Built-in", routing.Catalog)
-		check("ACC process ownership", !owned, "no owned process expected")
+		check("Azure process ownership", !owned, "no owned process expected")
 	}
 	check("stream/tool translation", codexTransportSelfTest(), "local deterministic conversion")
 	baseline := codexBaselineStatus(restorePath, string(config))
 	check("subscription baseline", baseline == "Valid" || baseline == "Recoverable", baseline)
-	check("port ownership", routing.Mode != "ACC" || running && owned, strconv.Itoa(cfg.Port))
+	check("port ownership", routing.Mode != "Azure" || running && owned, strconv.Itoa(cfg.Port))
 	storeReady := auth != nil && auth.store != nil
 	storeName := "unavailable"
 	if auth != nil {
@@ -495,7 +495,7 @@ func startOwnedCodexProcess(base string) (codexProcessOwnership, bool, error) {
 			}
 			_ = os.Remove(path)
 		} else if processExists(ownership.PID) {
-			return codexProcessOwnership{}, false, fmt.Errorf("PID %d is alive but no longer matches the recorded ACC executable; refusing to replace or kill it", ownership.PID)
+			return codexProcessOwnership{}, false, fmt.Errorf("PID %d is alive but no longer matches the recorded Azure executable; refusing to replace or kill it", ownership.PID)
 		} else {
 			_ = os.Remove(path)
 		}
@@ -503,7 +503,7 @@ func startOwnedCodexProcess(base string) (codexProcessOwnership, bool, error) {
 		return codexProcessOwnership{}, false, err
 	}
 	if proxyAlive(base) {
-		return codexProcessOwnership{}, false, fmt.Errorf("an unowned process is already serving %s; stop it before `acc codex start`", base)
+		return codexProcessOwnership{}, false, fmt.Errorf("an unowned process is already serving %s; stop it before `azure codex start`", base)
 	}
 	pid, executable, err := startProxyDetachedWithPID()
 	if err != nil {
@@ -513,12 +513,12 @@ func startOwnedCodexProcess(base string) (codexProcessOwnership, bool, error) {
 	encoded, _ := json.MarshalIndent(ownership, "", "  ")
 	if err := atomicWriteFile(path, append(encoded, '\n'), 0600); err != nil {
 		_ = syscall.Kill(pid, syscall.SIGTERM)
-		return codexProcessOwnership{}, false, fmt.Errorf("record ACC process ownership: %w", err)
+		return codexProcessOwnership{}, false, fmt.Errorf("record Azure process ownership: %w", err)
 	}
 	if !waitForProxy(base, 10*time.Second) {
 		_ = stopOwnedProcess(ownership)
 		_ = os.Remove(path)
-		return codexProcessOwnership{}, false, fmt.Errorf("ACC did not become healthy at %s", base)
+		return codexProcessOwnership{}, false, fmt.Errorf("Azure did not become healthy at %s", base)
 	}
 	return ownership, true, nil
 }
@@ -538,7 +538,7 @@ func stopOwnedCodexProcess(path string) (bool, error) {
 		return false, nil
 	}
 	if !processMatchesOwnership(ownership) {
-		return false, fmt.Errorf("PID %d no longer matches the recorded ACC executable; refusing to kill it", ownership.PID)
+		return false, fmt.Errorf("PID %d no longer matches the recorded Azure executable; refusing to kill it", ownership.PID)
 	}
 	if err := stopOwnedProcess(ownership); err != nil {
 		return false, err
@@ -560,5 +560,5 @@ func stopOwnedProcess(ownership codexProcessOwnership) error {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return fmt.Errorf("ACC process %d did not stop after SIGTERM", ownership.PID)
+	return fmt.Errorf("Azure process %d did not stop after SIGTERM", ownership.PID)
 }

@@ -48,7 +48,7 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
         run: |
-          out="acc-${GOOS}-${GOARCH}"
+          out="azure-${GOOS}-${GOARCH}"
           go build -trimpath -ldflags "-s -w" -o "$out" .
           tar -czf "${out}.tar.gz" "$out"
           sha256sum "${out}.tar.gz" > "${out}.tar.gz.sha256"
@@ -56,10 +56,10 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: acc-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: azure-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
-            acc-*.tar.gz
-            acc-*.tar.gz.sha256
+            azure-*.tar.gz
+            azure-*.tar.gz.sha256
           retention-days: 1
 
   release:
@@ -89,9 +89,9 @@ jobs:
         run: |
           set -euo pipefail
           for platform in darwin-arm64 darwin-amd64 linux-arm64 linux-amd64; do
-            test -s "dist/acc-${platform}.tar.gz"
-            test -s "dist/acc-${platform}.tar.gz.sha256"
-            (cd dist && sha256sum -c "acc-${platform}.tar.gz.sha256")
+            test -s "dist/azure-${platform}.tar.gz"
+            test -s "dist/azure-${platform}.tar.gz.sha256"
+            (cd dist && sha256sum -c "azure-${platform}.tar.gz.sha256")
           done
 
       - name: Publish release

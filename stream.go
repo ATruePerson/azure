@@ -16,7 +16,9 @@ import (
 // before the proxy abandons it and tries the next fallback. A reasoning model
 // that goes silent (stalled / overloaded) trips this; a model that streams
 // promptly does not. Package var so tests can shorten it.
-var firstTokenTimeout = 15 * time.Second
+var firstTokenTimeout = 30 * time.Second
+
+const connectionRetryDelay = 500 * time.Millisecond
 
 // awaitFirstByte blocks until the first byte is readable from src or d passes.
 // On success it returns a reader that re-emits that first byte followed by the
@@ -92,7 +94,7 @@ func streamTranslate(w http.ResponseWriter, body io.Reader, model string) (int, 
 	closeReasoning := func() {
 		if reasoningOpen {
 			send("content_block_delta", map[string]any{"type": "content_block_delta", "index": reasoningIndex,
-				"delta": map[string]any{"type": "signature_delta", "signature": "acc"}})
+				"delta": map[string]any{"type": "signature_delta", "signature": "azure"}})
 			send("content_block_stop", map[string]any{"type": "content_block_stop", "index": reasoningIndex})
 			reasoningOpen = false
 		}

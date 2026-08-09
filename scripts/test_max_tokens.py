@@ -6,8 +6,8 @@ import time
 
 PROXY_URL = os.environ.get("ACC_PROXY_URL", "http://localhost:9999/v1/messages")
 HOME = os.environ.get("HOME", "~")
-CONFIG_PATH = os.environ.get("ACC_CONFIG_PATH", os.path.join(HOME, ".config", "acc", "config.json"))
-WORKSPACE_CONFIG_PATH = os.environ.get("ACC_WORKSPACE_CONFIG_PATH", os.path.join(HOME, "acc", "config.json"))
+CONFIG_PATH = os.environ.get("AZURE_CONFIG_PATH", os.path.join(HOME, ".config", "azure", "config.json"))
+WORKSPACE_CONFIG_PATH = os.environ.get("AZURE_WORKSPACE_CONFIG_PATH", os.path.join(HOME, "acc", "config.json"))
 
 QUESTION_PRISONERS = """A group of 100 prisoners are in a prison, each with a unique number from 1 to 100. In a room, there are 100 closed boxes, each containing a random number from 1 to 100. The numbers in the boxes are randomly shuffled. Each prisoner enters the room one by one and can open up to 50 boxes to find their own number. They cannot communicate after entering. If ALL 100 prisoners find their own number, they are all freed. If even one fails, they are all executed.
 

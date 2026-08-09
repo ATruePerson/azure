@@ -14,7 +14,7 @@ const appHTML = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ACC Assistant — Trueox macOS Agent</title>
+  <title>Azure Assistant — Trueox macOS Agent</title>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/lucide@0.344.0/dist/umd/lucide.min.js"></script>
@@ -1153,7 +1153,7 @@ const appHTML = `<!DOCTYPE html>
           <div class="brand-logo">
             <i data-lucide="cpu"></i>
           </div>
-          <span class="brand-title">ACC Client</span>
+          <span class="brand-title">Azure Client</span>
         </div>
       </div>
 
@@ -1222,7 +1222,7 @@ const appHTML = `<!DOCTYPE html>
               <span class="suggestion-title">Custom AppleScript Run</span>
               <span class="suggestion-desc">Execute high-context custom system commands.</span>
             </div>
-            <div class="suggestion-card" onclick="prefillPrompt('Say out loud: \'ACC gateway successfully loaded!\'')">
+            <div class="suggestion-card" onclick="prefillPrompt('Say out loud: \'Azure gateway successfully loaded!\'')">
               <i data-lucide="volume-2" class="suggestion-icon"></i>
               <span class="suggestion-title">Speak Native Voice</span>
               <span class="suggestion-desc">Stream and vocalize messages using native Mac TTS.</span>
@@ -1293,7 +1293,7 @@ const appHTML = `<!DOCTYPE html>
         <!-- Speak Text Widget -->
         <div class="tool-widget-card">
           <h4><i data-lucide="volume-2"></i> Speak Text out loud</h4>
-          <input type="text" class="tool-input" id="tts-widget-input" placeholder="Text to say..." value="ACC connected successfully.">
+          <input type="text" class="tool-input" id="tts-widget-input" placeholder="Text to say..." value="Azure connected successfully.">
           <button class="btn-execute-widget" id="btn-run-tts">
             <i data-lucide="play" style="width:12px;height:12px;"></i> Speak Aloud
           </button>

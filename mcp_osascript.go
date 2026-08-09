@@ -17,7 +17,7 @@ const (
 
 func newOsascriptMCPServer() *mcpServer {
 	server := &mcpServer{
-		Name: "acc-osascript", Version: "3.0.0",
+		Name: "azure-osascript", Title: "Azure OSAScript", Version: "3.0.0",
 		Tools: []mcpTool{{
 			Name:        "osascript",
 			Description: "Advanced unrestricted Mac automation. Run AppleScript or JXA through /usr/bin/osascript. This can control apps and modify local data, so use it only when a safer named mac-control tool cannot do the job.",

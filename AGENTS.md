@@ -1,9 +1,9 @@
-# AGENTS.md — acc-proxy
+# AGENTS.md — azure-proxy
 
-`acc-proxy` is a high-performance Go gateway that intercepts Anthropic SDK requests (like Codex) and translates them into OpenAI-compatible requests, routing to cheaper or specialized upstreams (NVIDIA NIM, Gemini, OpenRouter, OpenCode).
+`azure-proxy` is a high-performance Go gateway that intercepts Anthropic SDK requests (like Codex) and translates them into OpenAI-compatible requests, routing to cheaper or specialized upstreams (NVIDIA NIM, Gemini, OpenRouter, OpenCode).
 
 For the current Codex Desktop integration, model-family mapping, launch rules,
-and failure history, read [`ACC.md`](ACC.md) before changing `acc codex`.
+and failure history, read [`Azure.md`](Azure.md) before changing `azure codex`.
 
 > ZAI (`api.z.ai`) was removed 2026-06-28 — it is paid (error 1113 insufficient balance). `z-ai/glm-5.1` on the NVIDIA provider is a different, free thing.
 
@@ -13,7 +13,7 @@ and failure history, read [`ACC.md`](ACC.md) before changing `acc codex`.
 | :--- | :--- | :--- |
 | `main.go` | HTTP server, routers, model listings, command lifecycle | `handleMessages`, `handleModels`, `routeFor` |
 | `model_registry.go` | Codex capabilities, exact effort validation, explicit fallback chain | `responseModelChain`, `applyReasoningTarget` |
-| `persona.go` | Single ACC-owned identity without replacing platform/project instructions | `accPersona`, `requestWithACCPersona` |
+| `persona.go` | Single Azure-owned identity without replacing platform/project instructions | `azurePersona`, `requestWithAzurePersona` |
 | `translate.go` | Protocol translation (messages, tools, images) | `translateRequest`, `translateMessage`, `translateResponse`, `bucketForBudget` |
 | `stream.go` | Real-time SSE translator for streaming requests | `streamTranslate` (extracts usage from final chunks) |
 | `tui.go` | Live terminal dashboard + persistent logger | `AddTUILog` (writes `test_runs.jsonl`), `drawDashboard` |
@@ -22,16 +22,16 @@ and failure history, read [`ACC.md`](ACC.md) before changing `acc codex`.
 
 ## Active environment & paths
 
-- **Binary**: `/Users/kabir/.local/bin/acc-proxy`
-- **Config**: `/Users/kabir/.config/acc/config.json`
-- **API keys / env**: `/Users/kabir/.config/acc/.env`
-- **Proxy log**: `/Users/kabir/.config/acc/proxy.log`
-- **Persistent runs log**: `/Users/kabir/acc/test_runs.jsonl`
+- **Binary**: `/Users/kabir/.local/bin/azure` (and sibling `azure-proxy`)
+- **Config**: `/Users/kabir/.config/azure/config.json`
+- **API keys / env**: `/Users/kabir/.config/azure/.env`
+- **Proxy log**: `/Users/kabir/.config/azure/proxy.log`
+- **Persistent runs log**: `/Users/kabir/.config/azure/test_runs.jsonl` (repo checkout path; unchanged)
 
 ### Management commands
-- **Start**: `acc-start` (background daemon)
-- **Stop**: `acc-stop` (kills proxy processes)
-- **Restart**: `acc-restart` (stop, sleep, restart)
+- **Start**: `azure-start` (background daemon)
+- **Stop**: `azure-stop` (kills proxy processes)
+- **Restart**: `azure-restart` (stop, sleep, restart)
 
 ## Key protocols & features
 
@@ -75,7 +75,7 @@ A route's `extra_body` is **flat-merged to the top level** of the outgoing reque
 - `models` is the Codex-visible capability registry and exact stable-ID route.
 - `routes` (`opus`/`sonnet`/`haiku`) remain reusable family definitions.
 - `aliases` remain for legacy Anthropic and OpenAI-compatible clients.
-- Route-level `system_prepend` is retired and cleared on load. Only ACC's
+- Route-level `system_prepend` is retired and cleared on load. Only Azure's
   central persona plus user-owned global instructions may be injected.
 - Config is hot-reloaded per request (no restart needed for config-only edits); Go source changes need a rebuild.
 
@@ -84,5 +84,5 @@ A route's `extra_body` is **flat-merged to the top level** of the outgoing reque
 ```bash
 make test    # full suite with race detector
 make cover   # tests + coverage
-tail -f /Users/kabir/acc/test_runs.jsonl   # watch live logs
+tail -f /Users/kabir/.config/azure/test_runs.jsonl   # watch live logs
 ```

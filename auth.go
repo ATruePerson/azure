@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	authKeychainService = "dev.atrueperson.acc.oauth"
+	authKeychainService = "dev.atrueperson.azure.oauth"
 	authExpirySkew      = 60 * time.Second
 )
 
@@ -246,13 +246,13 @@ func validateCredential(credential authCredential) error {
 }
 
 func defaultCredentialStore() (credentialStore, string, error) {
-	if strings.EqualFold(os.Getenv("ACC_AUTH_STORE"), "file") {
-		path := strings.TrimSpace(os.Getenv("ACC_AUTH_FILE_DIR"))
+	if strings.EqualFold(os.Getenv("AZURE_AUTH_STORE"), "file") {
+		path := strings.TrimSpace(os.Getenv("AZURE_AUTH_FILE_DIR"))
 		store, err := newFileCredentialStore(path)
 		return store, "explicit file store", err
 	}
 	if runtime.GOOS != "darwin" {
-		return nil, "unavailable", fmt.Errorf("secure credential storage is unavailable on %s; explicitly set ACC_AUTH_STORE=file and ACC_AUTH_FILE_DIR to opt into private file storage", runtime.GOOS)
+		return nil, "unavailable", fmt.Errorf("secure credential storage is unavailable on %s; explicitly set AZURE_AUTH_STORE=file and AZURE_AUTH_FILE_DIR to opt into private file storage", runtime.GOOS)
 	}
 	if _, err := exec.LookPath("security"); err != nil {
 		return nil, "unavailable", fmt.Errorf("macOS Keychain command is unavailable")

@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestCodexGatewayPointsDirectlyToACC(t *testing.T) {
+func TestCodexGatewayPointsDirectlyToAzure(t *testing.T) {
 	got := codexFrontGatewayURL(&Config{Port: 8080})
 	if got != "http://127.0.0.1:8080/v1" {
 		t.Fatalf("gateway = %q", got)
@@ -29,7 +29,7 @@ trust_level = "trusted"
 command = "obsidian-mcp"
 `
 	configured := renderCodexConfig(original, "/tmp/catalog.json", "http://127.0.0.1:8080/v1", "nvidia/real~model")
-	for _, want := range []string{accCodexRootBegin, accCodexRootEnd, accCodexProvider, `model = "nvidia/real~model"`, `wire_api = "responses"`} {
+	for _, want := range []string{azureCodexRootBegin, azureCodexRootEnd, azureCodexProvider, `model = "nvidia/real~model"`, `wire_api = "responses"`} {
 		if !strings.Contains(configured, want) {
 			t.Fatalf("configured text missing %q:\n%s", want, configured)
 		}
@@ -39,9 +39,9 @@ command = "obsidian-mcp"
 			t.Fatalf("unrelated TOML was lost: %q\n%s", preserved, configured)
 		}
 	}
-	removed := removeACCFromCodexConfig(configured)
-	if strings.Contains(removed, "model_providers.acc") || strings.Contains(removed, accCodexRootBegin) {
-		t.Fatalf("ACC-owned config remains:\n%s", removed)
+	removed := removeAzureFromCodexConfig(configured)
+	if strings.Contains(removed, "model_providers.azure") || strings.Contains(removed, azureCodexRootBegin) {
+		t.Fatalf("Azure-owned config remains:\n%s", removed)
 	}
 	for _, preserved := range []string{`approval_policy = "on-request"`, `[projects."/home/user/project"]`, `[mcp_servers.obsidian]`} {
 		if !strings.Contains(removed, preserved) {
@@ -54,7 +54,7 @@ func TestConfigureCreatesTimestampedBackupAndSecretFreeCatalog(t *testing.T) {
 	cfg := codexTestConfig()
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
-	catalogPath := filepath.Join(dir, "acc-models.json")
+	catalogPath := filepath.Join(dir, "azure-models.json")
 	restorePath := filepath.Join(dir, "restore.json")
 	if err := os.WriteFile(configPath, []byte("approval_policy = \"on-request\"\n"), 0600); err != nil {
 		t.Fatal(err)
@@ -62,7 +62,7 @@ func TestConfigureCreatesTimestampedBackupAndSecretFreeCatalog(t *testing.T) {
 	if err := configureCodexApp(configPath, catalogPath, restorePath, "http://127.0.0.1:8080/v1", "nvidia/z-ai~sglm-5.2", cfg); err != nil {
 		t.Fatal(err)
 	}
-	backups, _ := filepath.Glob(configPath + ".acc-backup-*")
+	backups, _ := filepath.Glob(configPath + ".azure-backup-*")
 	if len(backups) == 0 {
 		t.Fatal("configure did not create a timestamped config backup")
 	}

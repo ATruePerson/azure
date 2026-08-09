@@ -44,7 +44,7 @@ func (s *server) handleDashboardRestart(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(200)
 	go func() {
 		time.Sleep(500 * time.Millisecond)
-		exec.Command("acc-restart").Run()
+		exec.Command("azure-restart").Run()
 	}()
 }
 
@@ -82,8 +82,8 @@ const dashboardHTML = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>▲ ACC Proxy Gateway Dashboard</title>
-  <meta name="description" content="Interactive dashboard for controlling and monitoring the ACC proxy gateway">
+  <title>▲ Azure Proxy Gateway Dashboard</title>
+  <meta name="description" content="Interactive dashboard for controlling and monitoring the Azure proxy gateway">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/lucide@0.344.0/dist/umd/lucide.min.js"></script>
   <style>
@@ -603,7 +603,7 @@ const dashboardHTML = `<!DOCTYPE html>
       <div class="brand">
         <i data-lucide="triangle" class="logo-icon" size="28"></i>
         <div>
-          <h1>ACC PROXY GATEWAY</h1>
+          <h1>Azure PROXY GATEWAY</h1>
           <p>Local Intelligent Router & Translator</p>
         </div>
       </div>
@@ -864,7 +864,7 @@ const dashboardHTML = `<!DOCTYPE html>
         try {
           const res = await fetch('/health');
           const txt = await res.text();
-          if (res.ok && txt.includes("acc-proxy")) {
+          if (res.ok && txt.includes("azure-proxy")) {
             clearInterval(interval);
             setTimeout(() => {
               window.location.reload();

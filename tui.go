@@ -38,7 +38,7 @@ func AddTUILog(entry LogEntry) {
 		tuiLogs = tuiLogs[1:]
 	}
 
-	f, err := os.OpenFile("/Users/kabir/acc/test_runs.jsonl", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	f, err := os.OpenFile("/Users/kabir/.config/azure/test_runs.jsonl", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err == nil {
 		defer f.Close()
 		type jLine struct {
@@ -230,9 +230,9 @@ func RunTUI(cfg *Config, stopChan chan bool) {
 				tuiLogsMu.Unlock()
 			case "r", "R":
 				fmt.Print("\033[H\033[2J")
-				fmt.Println("Triggering proxy restart via acc-restart...")
+				fmt.Println("Triggering proxy restart via azure-restart...")
 				setRawMode(false)
-				exec.Command("acc-restart").Run()
+				exec.Command("azure-restart").Run()
 				os.Exit(0)
 			}
 		}

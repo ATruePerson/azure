@@ -16,6 +16,13 @@ type mockTripper struct {
 	fn func(*http.Request) (*http.Response, error)
 }
 
+func TestUpstreamHTTPClientAllowsSlowReasoningModelsToStart(t *testing.T) {
+	transport := newUpstreamHTTPClient().Transport.(*http.Transport)
+	if transport.ResponseHeaderTimeout != 30*time.Second {
+		t.Fatalf("response header timeout = %s, want 30s", transport.ResponseHeaderTimeout)
+	}
+}
+
 func TestUpstreamHTTPClientTimesOutWaitingForHeaders(t *testing.T) {
 	oldTimeout := firstTokenTimeout
 	firstTokenTimeout = 40 * time.Millisecond

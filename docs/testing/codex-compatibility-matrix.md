@@ -6,7 +6,7 @@ means a real provider or Codex client is still needed.
 | Capability | Status | Boundary |
 | --- | --- | --- |
 | Direct `setup/start/stop/status/doctor/restore/remove` | Verified | No OpenCodex execution or configuration |
-| Loopback ACC listener and OAuth callback | Verified | Explicit `127.0.0.1` binds |
+| Loopback Azure listener and OAuth callback | Verified | Explicit `127.0.0.1` binds |
 | Real provider-prefixed catalog | Verified | Unique IDs; no Claude aliases; auth refresh |
 | Secure provider isolation and rotation | Verified | Keychain abstraction, memory/file stores, single-flight |
 | Kimi device authorization | Verified | Polling, slow-down, denial, expiry, refresh |

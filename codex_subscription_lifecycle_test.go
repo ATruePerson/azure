@@ -22,7 +22,7 @@ func newCodexLifecycleTestPaths(t *testing.T) codexLifecycleTestPaths {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	codexDir := filepath.Join(home, ".codex")
-	accStateDir := filepath.Join(home, ".config", "acc")
+	accStateDir := filepath.Join(home, ".config", "azure")
 	if err := os.MkdirAll(codexDir, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func newCodexLifecycleTestPaths(t *testing.T) codexLifecycleTestPaths {
 	return codexLifecycleTestPaths{
 		Home:     home,
 		Config:   filepath.Join(codexDir, "config.toml"),
-		Catalog:  filepath.Join(codexDir, "acc-models.json"),
+		Catalog:  filepath.Join(codexDir, "azure-models.json"),
 		Baseline: baseline,
 		Restart:  codexRestartPathForBaseline(baseline),
 		Auth:     filepath.Join(codexDir, "auth.json"),
@@ -80,9 +80,9 @@ func TestCleanSubscriptionConfigStartThenRestore(t *testing.T) {
 	startTestCodexConfig(t, paths)
 	configured := readTestFile(t, paths.Config)
 	if strings.Count(string(configured), "web_search =") != 1 || !strings.Contains(string(configured), `web_search = "disabled"`) {
-		t.Fatalf("start did not exclusively own web_search while ACC was active:\n%s", configured)
+		t.Fatalf("start did not exclusively own web_search while Azure was active:\n%s", configured)
 	}
-	if routing := inspectCodexRouting(string(configured)); routing.Mode != "ACC" || routing.Provider != "acc" {
+	if routing := inspectCodexRouting(string(configured)); routing.Mode != "Azure" || routing.Provider != "azure" {
 		t.Fatalf("routing after start = %+v", routing)
 	}
 	if status := codexBaselineStatus(paths.Baseline, string(configured)); status != "Valid" {
@@ -133,8 +133,8 @@ func TestExistingOpenCodexConfigStartThenRestoreToSubscription(t *testing.T) {
 	if strings.Contains(started, "10100") || strings.Contains(started, "model_providers.opencodex") {
 		t.Fatalf("OpenCodex routing survived start:\n%s", started)
 	}
-	if inspectCodexRouting(started).Mode != "ACC" {
-		t.Fatalf("start did not activate ACC:\n%s", started)
+	if inspectCodexRouting(started).Mode != "Azure" {
+		t.Fatalf("start did not activate Azure:\n%s", started)
 	}
 
 	result, err := restoreCodexAppDetailed(paths.Config, paths.Catalog, paths.Baseline, paths.Restart)
@@ -148,7 +148,7 @@ func TestExistingOpenCodexConfigStartThenRestoreToSubscription(t *testing.T) {
 	if err := validateSubscriptionCodexConfig(restored); err != nil {
 		t.Fatalf("restore did not produce subscription config: %v\n%s", err, restored)
 	}
-	for _, forbidden := range []string{"10100", "9999", "model_catalog_json", "model_providers.acc", "model_providers.opencodex", "nvidia/old-model"} {
+	for _, forbidden := range []string{"10100", "9999", "model_catalog_json", "model_providers.azure", "model_providers.opencodex", "nvidia/old-model"} {
 		if strings.Contains(restored, forbidden) {
 			t.Fatalf("restored config still contains active custom routing %q:\n%s", forbidden, restored)
 		}
@@ -163,24 +163,24 @@ func TestExistingOpenCodexConfigStartThenRestoreToSubscription(t *testing.T) {
 	}
 }
 
-func TestRecoveryRestoreFromExistingACCConfigWithoutBaseline(t *testing.T) {
+func TestRecoveryRestoreFromExistingAzureConfigWithoutBaseline(t *testing.T) {
 	paths := newCodexLifecycleTestPaths(t)
-	accConfig := `# BEGIN ACC CODEX OWNED
+	azureConfig := `# BEGIN AZURE CODEX OWNED
 model = "nvidia/z-ai~sglm-5.2"
-model_provider = "acc"
+model_provider = "azure"
 model_catalog_json = "` + paths.Catalog + `"
 web_search = "disabled"
-# END ACC CODEX OWNED
+# END AZURE CODEX OWNED
 
 approval_policy = "on-request"
 
-# ACC CODEX OWNED PROVIDER
-[model_providers.acc]
-name = "ACC"
+# AZURE CODEX OWNED PROVIDER
+[model_providers.azure]
+name = "Azure"
 base_url = "http://127.0.0.1:9999/v1"
 wire_api = "responses"
 `
-	writeTestFile(t, paths.Config, []byte(accConfig))
+	writeTestFile(t, paths.Config, []byte(azureConfig))
 	writeTestFile(t, paths.Catalog, []byte(`{"models":[{"slug":"nvidia/z-ai~sglm-5.2"}]}`))
 
 	result, err := restoreCodexAppDetailed(paths.Config, paths.Catalog, paths.Baseline, paths.Restart)
@@ -198,7 +198,7 @@ wire_api = "responses"
 		t.Fatalf("recovery lost unrelated setting:\n%s", restored)
 	}
 	if _, err := os.Stat(paths.Catalog); !os.IsNotExist(err) {
-		t.Fatalf("recovery should remove generated ACC catalog, stat err=%v", err)
+		t.Fatalf("recovery should remove generated Azure catalog, stat err=%v", err)
 	}
 	if status := codexBaselineStatus(paths.Baseline, restored); status != "Valid" {
 		t.Fatalf("recovery baseline status = %s", status)

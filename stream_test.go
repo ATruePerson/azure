@@ -44,7 +44,7 @@ func TestStreamThinkingTranslation(t *testing.T) {
 	w := httptest.NewRecorder()
 	streamTranslate(w, strings.NewReader(openaiSSE), "model")
 	out := w.Body.String()
-	for _, want := range []string{`"type":"thinking_delta"`, `"thinking":"plan"`, `"signature":"acc"`} {
+	for _, want := range []string{`"type":"thinking_delta"`, `"thinking":"plan"`, `"signature":"azure"`} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in stream output:\n%s", want, out)
 		}

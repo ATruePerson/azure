@@ -315,7 +315,7 @@ func translateToResponsesWithTools(or *OpenAIResponse, model string, translation
 					Content: content,
 				})
 			}
-			// Restore native custom calls from ACC's single-string bridge while
+			// Restore native custom calls from Azure's single-string bridge while
 			// leaving ordinary function/MCP calls untouched.
 			for _, tc := range ch.Message.ToolCalls {
 				callID := tc.ID
@@ -381,7 +381,7 @@ func (s *server) executeUpstream(
 		return nil, resolvedModel{}, runtimeErr
 	}
 
-	requestForRoute, err := requestWithACCPersona(or, currentRoute)
+	requestForRoute, err := requestWithAzurePersona(or, currentRoute)
 	if err != nil {
 		httpErr(w, 500, "prepare request: "+err.Error())
 		return nil, resolvedModel{}, err
@@ -426,6 +426,9 @@ func (s *server) executeUpstream(
 				return nil, resolvedModel{}, err
 			}
 			log.Printf("upstream connection failed for %s/%s, retrying (%d/%d): %v", currentRoute.Provider, currentRoute.Model, attempt, maxAttempts, err)
+			if sleepContext(ctx, connectionRetryDelay) != nil {
+				return nil, resolvedModel{}, ctx.Err()
+			}
 			continue
 		}
 
@@ -1097,15 +1100,15 @@ func boundedOutputTokens(requested, routeLimit int) int {
 }
 
 func setBackendHeaders(w http.ResponseWriter, requestedModel string, active resolvedModel, requestedEffort string) {
-	w.Header().Set("X-ACC-Requested-Model", requestedModel)
-	w.Header().Set("X-ACC-Backend-Provider", active.Route.Provider)
-	w.Header().Set("X-ACC-Backend-Model", active.Route.Model)
-	w.Header().Set("X-ACC-Fallback", fmt.Sprintf("%t", active.Fallback))
-	w.Header().Set("X-ACC-Capability-Reroute", fmt.Sprintf("%t", active.CapabilityReroute))
+	w.Header().Set("X-Azure-Requested-Model", requestedModel)
+	w.Header().Set("X-Azure-Backend-Provider", active.Route.Provider)
+	w.Header().Set("X-Azure-Backend-Model", active.Route.Model)
+	w.Header().Set("X-Azure-Fallback", fmt.Sprintf("%t", active.Fallback))
+	w.Header().Set("X-Azure-Capability-Reroute", fmt.Sprintf("%t", active.CapabilityReroute))
 	if requestedEffort != "" {
-		w.Header().Set("X-ACC-Requested-Effort", requestedEffort)
+		w.Header().Set("X-Azure-Requested-Effort", requestedEffort)
 	}
-	w.Header().Set("X-ACC-Backend-Effort", backendEffort(active, requestedEffort))
+	w.Header().Set("X-Azure-Backend-Effort", backendEffort(active, requestedEffort))
 }
 
 func backendEffort(active resolvedModel, requested string) string {

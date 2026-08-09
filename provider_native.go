@@ -40,7 +40,7 @@ type nativeProviderModel struct {
 	Reasoning []string
 }
 
-// Static rows are only offline seeds. `acc auth login` and `acc codex setup`
+// Static rows are only offline seeds. `azure auth login` and `azure codex setup`
 // refresh authenticated providers from their live /models endpoint where
 // available, then write only model IDs and capability metadata to the catalog.
 var nativeProviderDefinitions = map[string]nativeProviderDefinition{

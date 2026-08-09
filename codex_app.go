@@ -172,7 +172,7 @@ func codexModelCatalogEntriesWithAuth(cfg *Config, auth *authManager) []map[stri
 			"visibility": "list", "supported_in_api": true, "priority": i + 1,
 			"additional_speed_tiers": []string{}, "service_tiers": []any{},
 			"availability_nux": nil, "upgrade": nil,
-			"base_instructions": accPersonaForRuntime(model.Route.Provider, model.Route.Model, personaRuntimeCodex),
+			"base_instructions": azurePersonaForRuntime(model.Route.Provider, model.Route.Model, personaRuntimeCodex),
 			"model_messages": map[string]any{
 				"instructions_template": nil, "instructions_variables": nil, "approvals": nil,
 			},
@@ -184,7 +184,7 @@ func codexModelCatalogEntriesWithAuth(cfg *Config, auth *authManager) []map[stri
 			"supports_parallel_tool_calls": model.Capability.ToolCallSupport, "supports_image_detail_original": supportsImages,
 			"context_window": model.Capability.MaxContext, "max_context_window": model.Capability.MaxContext,
 			"max_output_tokens": model.Capability.MaxOutput,
-			"comp_hash":         "acc", "effective_context_window_percent": effectiveContextPercent,
+			"comp_hash":         "azure", "effective_context_window_percent": effectiveContextPercent,
 			"experimental_supported_tools": []any{}, "input_modalities": modalities,
 			"supports_search_tool": false, "use_responses_lite": false,
 			"tool_mode": "code_mode_only", "multi_agent_version": "v1",
@@ -222,9 +222,9 @@ func codexModelCatalogJSONWithAuth(cfg *Config, auth *authManager) []byte {
 }
 
 const (
-	accCodexRootBegin = "# BEGIN ACC CODEX OWNED"
-	accCodexRootEnd   = "# END ACC CODEX OWNED"
-	accCodexProvider  = "# ACC CODEX OWNED PROVIDER"
+	azureCodexRootBegin = "# BEGIN AZURE CODEX OWNED"
+	azureCodexRootEnd   = "# END AZURE CODEX OWNED"
+	azureCodexProvider  = "# AZURE CODEX OWNED PROVIDER"
 )
 
 func codexRestartPathForBaseline(baselinePath string) string {
@@ -255,7 +255,7 @@ func saveCodexRestoreState(configPath, catalogPath, restorePath string) error {
 }
 
 func renderCodexConfig(original, catalogPath, baseURL, model string) string {
-	return renderCodexACCConfig(original, catalogPath, baseURL, model, "")
+	return renderCodexAzureConfig(original, catalogPath, baseURL, model, "")
 }
 
 func isCodexModel(cfg *Config, model string) bool {
@@ -295,14 +295,14 @@ func validateCodexConfigText(text string) error {
 
 func writeTimestampedBackup(path string, data []byte) (string, error) {
 	stamp := time.Now().UTC().Format("20060102T150405.000000000Z")
-	backup := path + ".acc-backup-" + stamp
+	backup := path + ".azure-backup-" + stamp
 	if err := atomicWriteFile(backup, data, 0600); err != nil {
 		return "", err
 	}
 	return backup, nil
 }
 
-func removeACCFromCodexConfig(original string) string {
+func removeAzureFromCodexConfig(original string) string {
 	return sanitizeCodexSubscriptionConfig(original)
 }
 
@@ -314,7 +314,7 @@ func atomicWriteFile(path string, data []byte, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".acc-*")
+	f, err := os.CreateTemp(filepath.Dir(path), ".azure-*")
 	if err != nil {
 		return err
 	}

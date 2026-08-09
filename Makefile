@@ -1,10 +1,11 @@
 .PHONY: build build-obsidian-plugin run tui test test-obsidian-plugin cover fmt vet lint clean
 
-# Build the acc binary into the current directory.
+# Build the azure binary into the current directory.
 build:
-	go build -o acc .
+	go build -o azure .
+	cp azure azure-proxy
 
-# Build the standalone Obsidian plugin server. It is not part of ACC core.
+# Build the standalone Obsidian plugin server. It is not part of Azure core.
 build-obsidian-plugin:
 	cd plugins/obsidian/server && go build -o ../bin/obsidian-mcp .
 
@@ -45,4 +46,4 @@ lint: vet
 	go test -race ./...
 
 clean:
-	rm -f acc
+	rm -f azure azure-proxy

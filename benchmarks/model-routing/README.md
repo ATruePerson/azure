@@ -1,6 +1,6 @@
-# ACC model-routing benchmark
+# Azure model-routing benchmark
 
-This suite evaluates configured model IDs through ACC's real `/v1/responses`
+This suite evaluates configured model IDs through Azure's real `/v1/responses`
 surface. It records provider failures separately from model, tool-formatting, and
 answer failures. Tool workflows run against an in-memory fixture repository;
 model-generated writes and commands never touch the real checkout.
@@ -8,7 +8,7 @@ model-generated writes and commands never touch the real checkout.
 The normalized reasoning policy is `reasoning.mode: maximum`. Each hidden
 benchmark model maps that policy to its own provider-supported request fields in
 `config.json`; the runner requests the model's exact `max` effort and records the
-actual `X-ACC-*` response headers.
+actual `X-Azure-*` response headers.
 
 Run the full matrix:
 

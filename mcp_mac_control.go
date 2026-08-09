@@ -126,9 +126,9 @@ func newMacControlMCPServer() *mcpServer {
 	additive := map[string]any{"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false}
 	mutating := map[string]any{"readOnlyHint": false, "destructiveHint": true, "idempotentHint": false, "openWorldHint": false}
 	server := &mcpServer{
-		Name: "acc-mac-control", Version: "3.0.1",
+		Name: "azure-mac-control", Title: "Azure Mac Control", Version: "3.0.1",
 		Tools: []mcpTool{
-			{Name: "calendar_list_events", Description: "List local Calendar events. ACC closes Calendar afterward only if this tool opened it.", Annotations: readOnly, InputSchema: objectSchema(map[string]any{"start": stringProperty("ISO 8601 start, default now"), "end": stringProperty("ISO 8601 end, default 7 days later"), "calendar": stringProperty("Exact calendar name")}, nil)},
+			{Name: "calendar_list_events", Description: "List local Calendar events. Azure closes Calendar afterward only if this tool opened it.", Annotations: readOnly, InputSchema: objectSchema(map[string]any{"start": stringProperty("ISO 8601 start, default now"), "end": stringProperty("ISO 8601 end, default 7 days later"), "calendar": stringProperty("Exact calendar name")}, nil)},
 			{Name: "calendar_create_event", Description: "Create a local Calendar event.", Annotations: additive, InputSchema: objectSchema(map[string]any{"title": stringProperty("Event title"), "start": stringProperty("ISO 8601 start"), "end": stringProperty("ISO 8601 end, default one hour later"), "calendar": stringProperty("Exact calendar name"), "location": stringProperty("Location"), "notes": stringProperty("Event notes"), "alarmMinutesBefore": map[string]any{"type": "integer", "minimum": 0}}, []string{"title", "start"})},
 			{Name: "calendar_delete_event", Description: "Delete one exact Calendar event. Refuses ambiguous matches unless start is supplied.", Annotations: mutating, InputSchema: objectSchema(map[string]any{"title": stringProperty("Exact event title"), "start": stringProperty("ISO 8601 start to disambiguate"), "calendar": stringProperty("Exact calendar name")}, []string{"title"})},
 			{Name: "reminders_list", Description: "List local Reminders items.", Annotations: readOnly, InputSchema: objectSchema(map[string]any{"list": stringProperty("Exact list name"), "includeCompleted": map[string]any{"type": "boolean"}}, nil)},

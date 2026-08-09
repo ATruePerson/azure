@@ -6,7 +6,7 @@ import (
 )
 
 // rememberResponse keeps the small amount of state needed for
-// previous_response_id. It is intentionally local to one ACC process: the
+// previous_response_id. It is intentionally local to one Azure process: the
 // gateway never sends conversation state to a third party just to implement
 // the Responses API contract.
 func (s *server) rememberResponse(response *ResponsesResponse) {
@@ -53,7 +53,7 @@ func (s *server) applyPreviousResponse(req *ResponsesRequest) error {
 	}
 	previous, ok := s.responseByID(req.PreviousResponseID)
 	if !ok {
-		return fmt.Errorf("previous response %q was not found in this ACC process", req.PreviousResponseID)
+		return fmt.Errorf("previous response %q was not found in this Azure process", req.PreviousResponseID)
 	}
 
 	items := append([]ResponsesItem(nil), previous.Output...)

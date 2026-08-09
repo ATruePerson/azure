@@ -20,7 +20,7 @@ import (
 const (
 	// Public native-client IDs and endpoints are compatible with the matching
 	// provider CLI flows documented in THIRD_PARTY_NOTICES.md. They are not
-	// secrets. ACC never embeds or requests a private OAuth client secret.
+	// secrets. Azure never embeds or requests a private OAuth client secret.
 	kimiOAuthClientID = "17e5f671-d194-4dfb-9706-5516cb48c098"
 	xaiOAuthClientID  = "b1a00492-073a-47ea-816f-4c329264a828"
 )
@@ -142,7 +142,7 @@ func (d *kimiOAuthDriver) requestDeviceAuthorization(ctx context.Context) (kimiD
 	}
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
-	request.Header.Set("User-Agent", "ACC OAuth client")
+	request.Header.Set("User-Agent", "Azure OAuth client")
 	response, err := d.client.Do(request)
 	if err != nil {
 		return kimiDeviceAuthorization{}, err
@@ -168,7 +168,7 @@ func (d *kimiOAuthDriver) tokenRequest(ctx context.Context, values url.Values) (
 	}
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
-	request.Header.Set("User-Agent", "ACC OAuth client")
+	request.Header.Set("User-Agent", "Azure OAuth client")
 	response, err := d.client.Do(request)
 	if err != nil {
 		return oauthTokenPayload{}, 0, err

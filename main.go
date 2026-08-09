@@ -47,6 +47,7 @@ func rejectForbiddenConfigKeys(raw []byte) error {
 }
 
 func main() {
+	ensureAzureConfigMigrated()
 	// Subcommands (setup, doctor, models, claude, help) run and exit before the
 	// flag-based server path.
 	if dispatch(os.Args) {
@@ -54,7 +55,7 @@ func main() {
 	}
 
 	cfgPath := flag.String("config", "", "path to config.json")
-	envPath := flag.String("env", os.Getenv("HOME")+"/.config/acc/.env", "dotenv file with provider keys")
+	envPath := flag.String("env", os.Getenv("HOME")+"/.config/azure/.env", "dotenv file with provider keys")
 	tuiFlag := flag.Bool("tui", false, "launch interactive TUI dashboard")
 	uiFlag := flag.Bool("ui", false, "launch web UI dashboard in Safari")
 	flag.Parse()
@@ -66,7 +67,7 @@ func main() {
 		if _, err := os.Stat("config.json"); err == nil {
 			path = "config.json"
 		} else {
-			path = os.Getenv("HOME") + "/.config/acc/config.json"
+			path = os.Getenv("HOME") + "/.config/azure/config.json"
 		}
 	}
 
@@ -98,7 +99,7 @@ func main() {
 	mux.HandleFunc("/v1/chat/completions", s.handleChatCompletions)
 	mux.HandleFunc("/v1/models", s.handleModels)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("acc-proxy ok"))
+		w.Write([]byte("azure-proxy ok"))
 	})
 
 	mux.HandleFunc("/app", s.handleApp)
@@ -116,7 +117,7 @@ func main() {
 		http.NotFound(w, r)
 	})
 
-	// ACC is a local gateway. Binding explicitly to loopback prevents its
+	// Azure is a local gateway. Binding explicitly to loopback prevents its
 	// configured provider credentials from becoming reachable on the LAN.
 	addr := fmt.Sprintf("127.0.0.1:%d", cfg.Port)
 
@@ -139,11 +140,11 @@ func main() {
 	} else {
 		if *uiFlag {
 			killPortOwner(cfg.Port)
-			log.Printf("acc Web UI: launching Assistant App in Safari...")
+			log.Printf("azure Web UI: launching Assistant App in Safari...")
 			exec.Command("open", fmt.Sprintf("http://localhost:%d/app", cfg.Port)).Start()
 		}
 
-		log.Printf("acc on %s — point ANTHROPIC_BASE_URL at http://localhost%s", addr, addr)
+		log.Printf("azure on %s — point ANTHROPIC_BASE_URL at http://localhost%s", addr, addr)
 		go func() {
 			sig := make(chan os.Signal, 1)
 			signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
@@ -320,6 +321,9 @@ func (s *server) handleMessages(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			log.Printf("upstream connection failed for %s/%s, retrying (%d/%d): %v", activeRoute.Provider, activeRoute.Model, attempt, maxAttempts, err)
+			if sleepContext(r.Context(), connectionRetryDelay) != nil {
+				return
+			}
 			continue
 		}
 
@@ -503,7 +507,7 @@ func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := chatJSONWithACCPersona(raw, activeRoute)
+	body, err := chatJSONWithAzurePersona(raw, activeRoute)
 	if err != nil {
 		httpErr(w, 400, "prepare request: "+err.Error())
 		logit(activeRoute.Model, 400, 0, 0, 0, "")
@@ -551,6 +555,9 @@ func (s *server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			log.Printf("upstream connection failed for %s/%s, retrying (%d/%d): %v", activeRoute.Provider, activeRoute.Model, attempt, maxAttempts, err)
+			if sleepContext(r.Context(), connectionRetryDelay) != nil {
+				return
+			}
 			continue
 		}
 
@@ -703,7 +710,7 @@ func (s *server) handleModels(w http.ResponseWriter, r *http.Request) {
 		for _, id := range allow {
 			data = append(data, map[string]any{
 				"id": id, "object": "model",
-				"created": 1735689600, "owned_by": "acc-proxy",
+				"created": 1735689600, "owned_by": "azure-proxy",
 			})
 		}
 		json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": data})
@@ -943,7 +950,7 @@ func loadConfig(path string) (*Config, error) {
 	}
 
 	for k, r := range c.Routes {
-		// Route-specific persona files were an ACC-owned legacy mechanism. They
+		// Route-specific persona files were an Azure-owned legacy mechanism. They
 		// are intentionally retired so provider imitation prompts can never
 		// override the central Kabir's Second Brain identity.
 		r.SystemPrepend = ""

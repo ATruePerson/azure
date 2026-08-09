@@ -95,7 +95,7 @@ func TestLegacyRoutePersonaIsNotInjected(t *testing.T) {
 		t.Fatalf("original system text dropped: %s", sys)
 	}
 	if !strings.Contains(sys, "Kabir's Second Brain") {
-		t.Fatalf("ACC persona missing: %s", sys)
+		t.Fatalf("Azure persona missing: %s", sys)
 	}
 }
 
@@ -205,7 +205,7 @@ func TestToolTurnGetsReasoningMarkerWhenThinkingWasOmitted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(msgs) != 1 || decodeStringContent(msgs[0].ReasoningContent) != "acc" {
+	if len(msgs) != 1 || decodeStringContent(msgs[0].ReasoningContent) != "azure" {
 		t.Fatalf("missing tool-turn reasoning marker: %+v", msgs)
 	}
 }

@@ -26,7 +26,7 @@ type providerModelCacheEntry struct {
 }
 
 func providerModelCachePath() string {
-	return filepath.Join(accDir(), "provider-models.json")
+	return filepath.Join(azureDir(), "provider-models.json")
 }
 
 func discoverProviderModels(ctx context.Context, client *http.Client, runtime providerRuntime) ([]nativeProviderModel, error) {

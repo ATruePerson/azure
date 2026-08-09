@@ -49,9 +49,9 @@ func TestCodexOfflineDefaultIsRealProviderModel(t *testing.T) {
 }
 
 func TestDetachedProxyCommandStartsIndependentSession(t *testing.T) {
-	cmd := detachedProxyCommand("/tmp/acc-proxy")
-	if len(cmd.Args) != 2 || cmd.Args[0] != "nohup" || cmd.Args[1] != "/tmp/acc-proxy" {
-		t.Fatalf("command args = %q, want nohup /tmp/acc-proxy", cmd.Args)
+	cmd := detachedProxyCommand("/tmp/azure-proxy")
+	if len(cmd.Args) != 2 || cmd.Args[0] != "nohup" || cmd.Args[1] != "/tmp/azure-proxy" {
+		t.Fatalf("command args = %q, want nohup /tmp/azure-proxy", cmd.Args)
 	}
 	if cmd.SysProcAttr == nil || !cmd.SysProcAttr.Setsid {
 		t.Fatal("detached proxy must start in its own session")
@@ -59,8 +59,8 @@ func TestDetachedProxyCommandStartsIndependentSession(t *testing.T) {
 }
 
 func TestDetachedProxyCommandPinsConfigAndEnvPaths(t *testing.T) {
-	cmd := detachedProxyCommand("/tmp/acc-proxy", "-config", "/tmp/config.json", "-env", "/tmp/.env")
-	want := []string{"nohup", "/tmp/acc-proxy", "-config", "/tmp/config.json", "-env", "/tmp/.env"}
+	cmd := detachedProxyCommand("/tmp/azure-proxy", "-config", "/tmp/config.json", "-env", "/tmp/.env")
+	want := []string{"nohup", "/tmp/azure-proxy", "-config", "/tmp/config.json", "-env", "/tmp/.env"}
 	if !reflect.DeepEqual(cmd.Args, want) {
 		t.Fatalf("command args = %q, want %q", cmd.Args, want)
 	}
@@ -68,8 +68,8 @@ func TestDetachedProxyCommandPinsConfigAndEnvPaths(t *testing.T) {
 
 func TestProxyExecutablePrefersManagedSibling(t *testing.T) {
 	dir := t.TempDir()
-	command := filepath.Join(dir, "acc")
-	proxy := filepath.Join(dir, "acc-proxy")
+	command := filepath.Join(dir, "azure")
+	proxy := filepath.Join(dir, "azure-proxy")
 	if err := os.WriteFile(proxy, []byte("proxy"), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestConfigureAndRestoreCodexApp(t *testing.T) {
 	cfg := codexTestConfig()
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
-	catalogPath := filepath.Join(dir, "acc-models.json")
+	catalogPath := filepath.Join(dir, "azure-models.json")
 	restorePath := filepath.Join(dir, "restore.json")
 	original := "sandbox_mode = \"workspace-write\"\nmodel = \"gpt-subscription\"\n\n[features]\nplugins = true\n"
 	if err := os.WriteFile(configPath, []byte(original), 0600); err != nil {
@@ -143,12 +143,12 @@ func TestConfigureAndRestoreCodexApp(t *testing.T) {
 	for _, required := range []string{
 		`sandbox_mode = "workspace-write"`,
 		`model = "nvidia/z-ai~sglm-5.2"`,
-		`model_provider = "acc"`,
+		`model_provider = "azure"`,
 		`model_catalog_json = "` + catalogPath + `"`,
 		`web_search = "disabled"`,
 		`[features]`,
 		`plugins = true`,
-		`[model_providers.acc]`,
+		`[model_providers.azure]`,
 		`base_url = "http://localhost:9999/v1"`,
 		`wire_api = "responses"`,
 	} {
@@ -189,9 +189,9 @@ func TestConfigureAndRestoreCodexApp(t *testing.T) {
 	}
 	for _, forbidden := range []string{
 		`model = "gpt-subscription"`,
-		`model_provider = "acc"`,
+		`model_provider = "azure"`,
 		`model_catalog_json`,
-		`[model_providers.acc]`,
+		`[model_providers.azure]`,
 		`http://localhost:9999/v1`,
 	} {
 		if strings.Contains(restoredText, forbidden) {

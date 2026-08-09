@@ -31,7 +31,7 @@ type benchTarget struct {
 // benchTargets is the full cross-matrix test matrix: every persona's
 // primary and (where configured) fallback model, read live from
 // config.json at run time so a config edit (e.g. a temperature tweak) is
-// picked up on the next `acc bench` run with no code change. fable and
+// picked up on the next `azure bench` run with no code change. fable and
 // mythos are byte-identical in config.json today, so only "fable" is
 // tested, labeled "fable/mythos" — see the design doc for why.
 var benchTargets = []benchTarget{
@@ -626,7 +626,7 @@ func cmdBench() {
 	loadDotenv(defaultEnvPath())
 	cfg, err := loadConfig(defaultConfigPath())
 	if err != nil {
-		fmt.Printf("  No config found. Run `acc setup` first. (%v)\n", err)
+		fmt.Printf("  No config found. Run `azure setup` first. (%v)\n", err)
 		return
 	}
 
@@ -649,7 +649,7 @@ func cmdBench() {
 	httpClient := &http.Client{Timeout: 5 * time.Minute}
 	results := make([]benchJobResult, len(jobs))
 
-	fmt.Printf("\n  acc bench — run %s, %d jobs (%d concurrent)\n\n", runID, len(jobs), benchConcurrency)
+	fmt.Printf("\n  azure bench — run %s, %d jobs (%d concurrent)\n\n", runID, len(jobs), benchConcurrency)
 
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, benchConcurrency)

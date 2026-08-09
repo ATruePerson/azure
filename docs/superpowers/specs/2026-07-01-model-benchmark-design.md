@@ -12,7 +12,7 @@ model considered top-class across coding/reasoning/creativity/math, Opus
 second, Sonnet solid for regular tasks, Haiku fast-but-shallow) that has never
 been tested against the actual configured backends.
 
-This tool replaces both of those with one repeatable command: `acc bench`.
+This tool replaces both of those with one repeatable command: `azure bench`.
 It answers "which backend wins this category" empirically, and "did my last
 config change help" by diffing against history.
 
@@ -170,7 +170,7 @@ job:
 ```
 
 `run_id` is a compact `YYYYMMDD-HHMMSS` (local time, no colons) generated once
-per `acc bench` invocation — used both as the JSONL field and as the markdown
+per `azure bench` invocation — used both as the JSONL field and as the markdown
 report's filename, so it must stay filesystem-safe. `timestamp` is the
 full-precision completion time of that specific job and can use normal
 RFC3339 formatting since it's never used as a filename. The variant field is
@@ -198,7 +198,7 @@ behind a number.
 ## CLI usage
 
 ```
-acc bench
+azure bench
 ```
 
 Runs the full 112-call matrix, prints progress + summary + diff, writes
@@ -210,5 +210,5 @@ needed for v1.
 Standard Go table-driven tests for the pure logic: JSONL line construction,
 judge-JSON parsing (including the malformed-reply retry/fallback path), and
 the diff-against-previous-run calculation. The actual provider calls are not
-unit tested (no good way to mock 7 live upstreams cheaply) — `acc bench`
+unit tested (no good way to mock 7 live upstreams cheaply) — `azure bench`
 itself, run by hand against the real providers, is the integration test.

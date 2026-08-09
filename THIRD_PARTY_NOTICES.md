@@ -2,7 +2,7 @@
 
 ## OpenCodex
 
-ACC's native Codex work referenced OpenCodex v2.7.30 source code and adapted
+Azure's native Codex work referenced OpenCodex v2.7.30 source code and adapted
 general interoperability patterns for provider OAuth, PKCE callbacks, model
 discovery, refresh-token rotation, and Anthropic OAuth tool-name mapping.
 

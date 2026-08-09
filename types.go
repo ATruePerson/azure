@@ -53,7 +53,7 @@ type Route struct {
 	// smaller than the public model when a larger-context fallback is available.
 	MaxContext int   `json:"max_context,omitempty"`
 	Stream     *bool `json:"stream,omitempty"`
-	// SystemPrepend is accepted only so old config files still load. ACC clears
+	// SystemPrepend is accepted only so old config files still load. Azure clears
 	// it during config loading; route-specific identity prompts are retired.
 	SystemPrepend string `json:"system_prepend,omitempty"`
 	// ExtraBody is a map of arbitrary JSON fields to merge into the outgoing
@@ -314,7 +314,7 @@ type ResponsesTool struct {
 	// Tools contains the function tools grouped under a Codex namespace.
 	Tools []ResponsesTool `json:"tools,omitempty"`
 	// Format is used by Responses custom tools to constrain their raw string
-	// input. It is intentionally raw so new format shapes survive ACC.
+	// input. It is intentionally raw so new format shapes survive Azure.
 	Format json.RawMessage `json:"format,omitempty"`
 	// Extra and Raw retain forward-compatible fields that Chat Completions
 	// cannot represent directly. The custom-tool bridge keeps them alongside

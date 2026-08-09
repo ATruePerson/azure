@@ -221,7 +221,7 @@ func ensureCodexSubscriptionBaseline(configPath, catalogPath, baselinePath strin
 		if err != nil {
 			return nil, false, err
 		}
-		if snapshot.Existed && filepath.Clean(path) == filepath.Clean(activeCatalog) && (routing.Mode == "ACC" || routing.Mode == "OpenCodex") && knownManagedCodexCatalog(path, catalogPath) {
+		if snapshot.Existed && filepath.Clean(path) == filepath.Clean(activeCatalog) && (routing.Mode == "Azure" || routing.Mode == "OpenCodex") && knownManagedCodexCatalog(path, catalogPath) {
 			snapshot.Preserve = false
 		}
 		catalogs = append(catalogs, snapshot)

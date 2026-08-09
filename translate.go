@@ -116,7 +116,7 @@ func translateRequest(ar *AnthropicRequest, route Route, cfg *Config) (*OpenAIRe
 		}
 	}
 
-	return requestWithACCPersona(or, route, personaRuntimeClaudeCode)
+	return requestWithAzurePersona(or, route, personaRuntimeClaudeCode)
 }
 
 // translateMessage turns one Anthropic message into one or more OpenAI
@@ -193,10 +193,10 @@ func translateMessage(m AnthropicMessage) ([]OpenAIMessage, error) {
 		}
 		// Reasoning models reject a follow-up tool turn when the assistant
 		// message has tool_calls but no reasoning_content. Claude can omit the
-		// thinking block on a replay, so keep the request valid with ACC's
+		// thinking block on a replay, so keep the request valid with Azure's
 		// protocol marker. Real reasoning, when present, always wins above.
 		if len(reasoning) == 0 && m.Role == "assistant" && len(toolCalls) > 0 {
-			reasoning = append(reasoning, "acc")
+			reasoning = append(reasoning, "azure")
 		}
 		if len(reasoning) > 0 {
 			msg.ReasoningContent = jsonString(strings.Join(reasoning, ""))
@@ -216,7 +216,7 @@ func translateResponse(or *OpenAIResponse, model string) map[string]any {
 		ch := or.Choices[0]
 		if ch.Message != nil {
 			if reasoning := messageReasoningContent(ch.Message); reasoning != "" {
-				content = append(content, map[string]any{"type": "thinking", "thinking": reasoning, "signature": "acc"})
+				content = append(content, map[string]any{"type": "thinking", "thinking": reasoning, "signature": "azure"})
 			}
 			if txt := decodeStringContent(ch.Message.Content); txt != "" {
 				content = append(content, map[string]any{"type": "text", "text": txt})

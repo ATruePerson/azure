@@ -172,7 +172,7 @@ func TestFileCredentialStoreRequiresExplicitPathAndUsesPrivateAtomicFiles(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || strings.HasPrefix(entries[0].Name(), ".acc-") {
+	if len(entries) != 1 || strings.HasPrefix(entries[0].Name(), ".azure-") {
 		t.Fatalf("atomic temporary file leaked: %+v", entries)
 	}
 }

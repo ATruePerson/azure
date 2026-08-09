@@ -139,7 +139,7 @@ func namespaceToolDefinitionFor(namespace, child ResponsesTool, route Route) (na
 	definition := namespaceToolDefinition{
 		Namespace:  namespace.Name,
 		Name:       fn.Name,
-		BridgeName: fmt.Sprintf("acc_ns_%x", hash[:10]),
+		BridgeName: fmt.Sprintf("azure_ns_%x", hash[:10]),
 	}
 	description := fn.Description
 	if namespace.Description != "" {
@@ -186,7 +186,7 @@ func customToolDefinitionFor(tool ResponsesTool, route Route) (customToolDefinit
 		raw, _ = json.Marshal(tool)
 	}
 	hash := sha256.Sum256(raw)
-	bridgeName := fmt.Sprintf("acc_custom_%x", hash[:10])
+	bridgeName := fmt.Sprintf("azure_custom_%x", hash[:10])
 	return customToolDefinition{
 		Name: tool.Name, Description: tool.Description, Format: append(json.RawMessage(nil), tool.Format...),
 		Extra: tool.Extra, Raw: append(json.RawMessage(nil), raw...), BridgeName: bridgeName,

@@ -11,40 +11,38 @@ func TestSanitizeCodexConfigStripsModelReasoningEffort(t *testing.T) {
 service_tier = "default"
 personality = "friendly"
 
-# BEGIN ACC CODEX OWNED
+# BEGIN AZURE CODEX OWNED
 model = "nvidia/nvidia~snemotron-3-ultra-550b-a55b"
 model_reasoning_effort = ""
-model_provider = "acc"
-model_catalog_json = "/Users/kabir/.codex/acc-models.json"
+model_provider = "azure"
+model_catalog_json = "/Users/kabir/.codex/azure-models.json"
 web_search = "disabled"
-# END ACC CODEX OWNED`
+# END AZURE CODEX OWNED`
 
 	sanitized := sanitizeCodexConfig(original, true)
 
-	// Should only have one model_reasoning_effort line (the ACC-owned one)
-	count := strings.Count(sanitized, "model_reasoning_effort")
-	if count != 1 {
-		t.Fatalf("Expected exactly 1 model_reasoning_effort line, got %d:\n%s", count, sanitized)
+	// Owned section and outside routing keys are stripped so restore/render can
+	// rewrite a single clean Azure block.
+	if strings.Contains(sanitized, "model_reasoning_effort") {
+		t.Fatalf("Expected model_reasoning_effort to be stripped, got:\n%s", sanitized)
 	}
-
-	// Should not contain the original subscription value
-	if strings.Contains(sanitized, "model_reasoning_effort = \"medium\"") {
-		t.Fatalf("Sanitized config still contains original model_reasoning_effort value:\n%s", sanitized)
+	if strings.Contains(sanitized, azureCodexRootBegin) || strings.Contains(sanitized, `model_provider = "azure"`) {
+		t.Fatalf("Azure-owned section should be stripped:\n%s", sanitized)
 	}
-
-	// Should contain the ACC-owned line
-	if !strings.Contains(sanitized, "model_reasoning_effort = \"\"") {
-		t.Fatalf("Sanitized config missing ACC-owned model_reasoning_effort line:\n%s", sanitized)
+	for _, want := range []string{`service_tier = "default"`, `personality = "friendly"`} {
+		if !strings.Contains(sanitized, want) {
+			t.Fatalf("unrelated setting lost (%s):\n%s", want, sanitized)
+		}
 	}
 }
 
-func TestRenderCodexACCConfigWithEmptyEffortDoesNotProduceInvalidTOML(t *testing.T) {
+func TestRenderCodexAzureConfigWithEmptyEffortDoesNotProduceInvalidTOML(t *testing.T) {
 	// Clean base config (no duplicates)
 	base := `service_tier = "default"
 personality = "friendly"`
 
 	// Render with empty effort (this was causing "reasoning_effort must not be empty" error)
-	rendered := renderCodexACCConfig(base, "/Users/kabir/.codex/acc-models.json", "http://127.0.0.1:9999/v1", "nvidia/nvidia~snemotron-3-ultra-550b-a55b", "")
+	rendered := renderCodexAzureConfig(base, "/Users/kabir/.codex/azure-models.json", "http://127.0.0.1:9999/v1", "nvidia/nvidia~snemotron-3-ultra-550b-a55b", "")
 
 	// Should NOT contain model_reasoning_effort line at all when empty
 	if strings.Contains(rendered, "model_reasoning_effort") {
@@ -52,12 +50,12 @@ personality = "friendly"`
 	}
 }
 
-func TestRenderCodexACCConfigWithNonEmptyEffortIncludesLine(t *testing.T) {
+func TestRenderCodexAzureConfigWithNonEmptyEffortIncludesLine(t *testing.T) {
 	base := `service_tier = "default"
 personality = "friendly"`
 
 	// Render with non-empty effort
-	rendered := renderCodexACCConfig(base, "/Users/kabir/.codex/acc-models.json", "http://127.0.0.1:9999/v1", "nvidia/nvidia~snemotron-3-ultra-550b-a55b", "medium")
+	rendered := renderCodexAzureConfig(base, "/Users/kabir/.codex/azure-models.json", "http://127.0.0.1:9999/v1", "nvidia/nvidia~snemotron-3-ultra-550b-a55b", "medium")
 
 	if !strings.Contains(rendered, "model_reasoning_effort = \"medium\"") {
 		t.Errorf("Rendered config missing model_reasoning_effort line:\n%s", rendered)
@@ -68,33 +66,33 @@ func TestGeneratedConfigIsAlwaysValidTOML(t *testing.T) {
 	testCases := []struct {
 		name     string
 		effort   string
-		hasAcc   bool
+		hasAzure bool
 		model    string
 		catalog  string
 		baseURL  string
 	}{
 		{
-			name:  "empty effort with ACC",
-			effort: "",
-			hasAcc: true,
-			model:  "nvidia/nvidia~snemotron-3-ultra-550b-a55b",
-			catalog: "/Users/kabir/.codex/acc-models.json",
-			baseURL: "http://127.0.0.1:9999/v1",
+			name:     "empty effort with Azure",
+			effort:   "",
+			hasAzure: true,
+			model:    "nvidia/nvidia~snemotron-3-ultra-550b-a55b",
+			catalog:  "/Users/kabir/.codex/azure-models.json",
+			baseURL:  "http://127.0.0.1:9999/v1",
 		},
 		{
-			name:  "non-empty effort with ACC",
-			effort: "high",
-			hasAcc: true,
-			model:  "nvidia/nvidia~snemotron-3-ultra-550b-a55b",
-			catalog: "/Users/kabir/.codex/acc-models.json",
-			baseURL: "http://127.0.0.1:9999/v1",
+			name:     "non-empty effort with Azure",
+			effort:   "high",
+			hasAzure: true,
+			model:    "nvidia/nvidia~snemotron-3-ultra-550b-a55b",
+			catalog:  "/Users/kabir/.codex/azure-models.json",
+			baseURL:  "http://127.0.0.1:9999/v1",
 		},
 		{
-			name:  "empty effort without ACC (subscription)",
-			effort: "",
-			hasAcc: false,
-			model:  "",
-			catalog: "",
+			name:     "empty effort without Azure (subscription)",
+			effort:   "",
+			hasAzure: false,
+			model:    "",
+			catalog:  "",
 			baseURL:  "",
 		},
 	}
@@ -104,8 +102,8 @@ func TestGeneratedConfigIsAlwaysValidTOML(t *testing.T) {
 personality = "friendly"`
 
 		var rendered string
-		if tc.hasAcc {
-			rendered = renderCodexACCConfig(base, tc.catalog, tc.baseURL, tc.model, tc.effort)
+		if tc.hasAzure {
+			rendered = renderCodexAzureConfig(base, tc.catalog, tc.baseURL, tc.model, tc.effort)
 		} else {
 			// For subscription mode, we'd use sanitizeCodexConfig directly
 			rendered = sanitizeCodexConfig(base, true)

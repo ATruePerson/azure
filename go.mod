@@ -1,4 +1,4 @@
-module github.com/ATruePerson/acc
+module github.com/ATruePerson/azure
 
 go 1.26.4
 

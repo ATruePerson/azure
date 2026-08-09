@@ -1,13 +1,13 @@
 #!/bin/sh
-# acc installer — downloads the latest prebuilt binary for your OS/arch.
+# azure installer — downloads the latest prebuilt binary for your OS/arch.
 #
-#   curl -fsSL https://raw.githubusercontent.com/ATruePerson/acc/main/scripts/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/ATruePerson/azure/main/scripts/install.sh | sh
 #
-# Installs to ~/.local/bin/acc (no sudo, no Go toolchain needed).
+# Installs to ~/.local/bin/azure (no sudo, no Go toolchain needed).
 set -eu
 
-REPO="ATruePerson/acc"
-BINDIR="${ACC_BINDIR:-$HOME/.local/bin}"
+REPO="ATruePerson/azure"
+BINDIR="${AZURE_BINDIR:-$HOME/.local/bin}"
 
 os="$(uname -s | tr '[:upper:]' '[:lower:]')"
 arch="$(uname -m)"
@@ -21,7 +21,7 @@ case "$os" in
   *) echo "Unsupported OS: $os (use 'go install' instead)" >&2; exit 1 ;;
 esac
 
-asset="acc-${os}-${arch}.tar.gz"
+asset="azure-${os}-${arch}.tar.gz"
 url="https://github.com/${REPO}/releases/latest/download/${asset}"
 
 tmp="$(mktemp -d)"
@@ -35,14 +35,14 @@ fi
 
 tar -xzf "$tmp/$asset" -C "$tmp"
 mkdir -p "$BINDIR"
-mv "$tmp/acc-${os}-${arch}" "$BINDIR/acc"
-chmod +x "$BINDIR/acc"
+mv "$tmp/azure-${os}-${arch}" "$BINDIR/azure"
+chmod +x "$BINDIR/azure"
 
-echo "Installed acc to $BINDIR/acc"
+echo "Installed azure to $BINDIR/azure"
 case ":$PATH:" in
   *":$BINDIR:"*) ;;
   *) echo "NOTE: $BINDIR is not on your PATH. Add this to your shell profile:"
      echo "      export PATH=\"$BINDIR:\$PATH\"" ;;
 esac
 echo
-echo "Next: run  acc setup"
+echo "Next: run  azure setup"

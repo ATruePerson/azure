@@ -14,7 +14,7 @@ import (
 )
 
 func TestRenderMCPConfigUsesACCSubcommandsAndKeepsRawOsascriptOptIn(t *testing.T) {
-	config, err := renderMCPConfig("/tmp/acc", false)
+	config, err := renderMCPConfig("/tmp/azure", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,27 +27,27 @@ func TestRenderMCPConfigUsesACCSubcommandsAndKeepsRawOsascriptOptIn(t *testing.T
 	if err := json.Unmarshal(config, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"acc-websearch", "acc-mac-control"} {
+	for _, name := range []string{"azure-websearch", "azure-mac-control"} {
 		server, ok := decoded.Servers[name]
 		if !ok {
 			t.Fatalf("missing %s", name)
 		}
-		if server.Command != "/tmp/acc" || len(server.Args) != 3 || server.Args[0] != "mcp" || server.Args[1] != "serve" {
+		if server.Command != "/tmp/azure" || len(server.Args) != 3 || server.Args[0] != "mcp" || server.Args[1] != "serve" {
 			t.Fatalf("bad %s command: %+v", name, server)
 		}
 	}
-	if _, ok := decoded.Servers["acc-osascript"]; ok {
+	if _, ok := decoded.Servers["azure-osascript"]; ok {
 		t.Fatal("raw osascript must be opt-in")
 	}
 
-	config, err = renderMCPConfig("/tmp/acc", true)
+	config, err = renderMCPConfig("/tmp/azure", true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := json.Unmarshal(config, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := decoded.Servers["acc-osascript"]; !ok {
+	if _, ok := decoded.Servers["azure-osascript"]; !ok {
 		t.Fatal("raw osascript missing after opt-in")
 	}
 }
@@ -68,7 +68,7 @@ func TestInstallClaude3PMCPConfigReplacesLegacyServersAndPreservesSettings(t *te
 		t.Fatal(err)
 	}
 
-	backup, err := installClaude3PMCPConfig(path, "/tmp/acc", true)
+	backup, err := installClaude3PMCPConfig(path, "/tmp/azure", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,10 +104,10 @@ func TestInstallClaude3PMCPConfigReplacesLegacyServersAndPreservesSettings(t *te
 			t.Fatalf("legacy server %s was not removed", legacy)
 		}
 	}
-	for _, name := range []string{"acc-websearch", "acc-mac-control", "acc-osascript"} {
+	for _, name := range []string{"azure-websearch", "azure-mac-control", "azure-osascript"} {
 		server, ok := servers[name]
-		if !ok || server.Command != "/tmp/acc" {
-			t.Fatalf("ACC server %s missing or invalid: %+v", name, server)
+		if !ok || server.Command != "/tmp/azure" {
+			t.Fatalf("Azure server %s missing or invalid: %+v", name, server)
 		}
 	}
 	if servers["tavily"].Command != "npx" || servers["tavily"].Env["TOKEN"] != "keep-me" {
@@ -262,7 +262,7 @@ func TestMCPStdioInitializeAndList(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := output.String()
-	for _, expected := range []string{"acc-websearch", "web_search", "web_fetch"} {
+	for _, expected := range []string{"azure-websearch", "web_search", "web_fetch"} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("stdio output missing %q: %s", expected, text)
 		}

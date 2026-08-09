@@ -62,13 +62,13 @@ func beginConfigureCodexApp(configPath, catalogPath, baselinePath, restartPath, 
 	if !catalogHasCodexModel(catalog, model) {
 		return rollback(fmt.Errorf("selected model %q is missing from generated catalog", model))
 	}
-	configured := renderCodexACCConfig(string(original), catalogPath, baseURL, model, "")
+	configured := renderCodexAzureConfig(string(original), catalogPath, baseURL, model, "")
 	if err := validateCodexConfigText(configured); err != nil {
 		return rollback(fmt.Errorf("generated Codex config is invalid: %w", err))
 	}
 	routing := inspectCodexRouting(configured)
-	if routing.Mode != "ACC" || routing.Provider != "acc" || filepath.Clean(resolveCodexPath(routing.Catalog, configPath)) != filepath.Clean(catalogPath) {
-		return rollback(fmt.Errorf("generated Codex config does not point exclusively to ACC"))
+	if routing.Mode != "Azure" || routing.Provider != "azure" || filepath.Clean(resolveCodexPath(routing.Catalog, configPath)) != filepath.Clean(catalogPath) {
+		return rollback(fmt.Errorf("generated Codex config does not point exclusively to Azure"))
 	}
 
 	catalogSnapshot, _ := captureCodexFile(catalogPath)
@@ -100,7 +100,7 @@ func beginConfigureCodexApp(configPath, catalogPath, baselinePath, restartPath, 
 	if err != nil {
 		return rollback(err)
 	}
-	if inspectCodexRouting(string(writtenConfig)).Mode != "ACC" || !catalogHasCodexModel(writtenCatalog, model) {
+	if inspectCodexRouting(string(writtenConfig)).Mode != "Azure" || !catalogHasCodexModel(writtenCatalog, model) {
 		return rollback(fmt.Errorf("post-write Codex verification failed"))
 	}
 	authUnchanged, err := codexAuthFingerprintsUnchanged(authBefore)

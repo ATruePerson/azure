@@ -55,6 +55,11 @@ func resolveCapabilityRoute(cfg *Config, id string, capability ModelCapability) 
 
 func (s *server) responseModelChain(modelID string) ([]resolvedModel, error) {
 	cfg := s.cfg.Load()
+	// Codex must use provider/model IDs. Bare model names (like "opus") are
+	// Claude aliases and must not resolve through Codex routing.
+	if !strings.Contains(modelID, "/") {
+		return nil, fmt.Errorf("invalid Codex model ID %q — use provider/model format", modelID)
+	}
 	// Try direct lookup first (config key may match slug directly).
 	capability, foundInModels := cfg.Models[modelID]
 	configKey := modelID
@@ -124,12 +129,6 @@ func (s *server) responseModelChain(modelID string) ([]resolvedModel, error) {
 			route.MaxTokens = capability.MaxOutput
 		}
 		return []resolvedModel{{ID: modelID, Capability: capability, Route: route}}, nil
-	}
-
-	// Codex must use provider/model IDs. Bare model names (like "opus") are
-	// Claude aliases and must not resolve through Codex routing.
-	if !strings.Contains(modelID, "/") {
-		return nil, fmt.Errorf("invalid Codex model ID %q — use provider/model format", modelID)
 	}
 
 	// Legacy non-Codex clients can still use aliases (no fallbacks).

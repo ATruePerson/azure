@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add `acc bench` — a CLI subcommand that runs a fixed prompt set against every configured persona (Opus/Sonnet/Haiku/Fable-Mythos) and their fallback models, judges each response for quality with a free unused model, and reports scores with a diff against the previous run.
+**Goal:** Add `azure bench` — a CLI subcommand that runs a fixed prompt set against every configured persona (Opus/Sonnet/Haiku/Fable-Mythos) and their fallback models, judges each response for quality with a free unused model, and reports scores with a diff against the previous run.
 
 **Architecture:** One new file, `bench.go`, in the existing flat root-package layout. Runs in-process (no proxy daemon required) by reusing the existing `Route`/`Config` types and `translateRequest` to build each outgoing call, then POSTing directly to the provider — the same path `handleMessages` already uses, just without the HTTP server in front of it. A capped worker pool (5 concurrent) runs the 7 configs × 8 prompts = 56 generation jobs, each immediately followed by one judge call. Results append to `bench_runs.jsonl` (same pattern as the existing `test_runs.jsonl`) and a full-detail markdown report per run.
 
@@ -12,7 +12,7 @@ Full design rationale lives in `docs/superpowers/specs/2026-07-01-model-benchmar
 
 ## Global Constraints
 
-- Go module `github.com/ATruePerson/acc`, go 1.26.4 (see `go.mod`) — stdlib only, no new dependencies.
+- Go module `github.com/ATruePerson/azure`, go 1.26.4 (see `go.mod`) — stdlib only, no new dependencies.
 - Worker pool capped at exactly 5 concurrent jobs.
 - Judge model is fixed: `Route{Provider: "nvidia", Model: "z-ai/glm-5.1", ReasoningEffort: "high"}` — free, not a contestant in any tested category.
 - Judge score scale is 1-10 (integer). A score outside that range is treated as a parse failure.
@@ -20,7 +20,7 @@ Full design rationale lives in `docs/superpowers/specs/2026-07-01-model-benchmar
 - `run_id` format is `YYYYMMDD-HHMMSS` (Go layout `20060102-150405`, local time, no colons) — used both as a JSONL field and as the markdown report filename, so it must stay filesystem-safe.
 - The JSONL variant field is named `variant` (values `"primary"`/`"fallback"`), never `config` — avoids colliding with "config" meaning `config.json` elsewhere in this codebase's vocabulary.
 - Full prompt/response text is never written to `bench_runs.jsonl` (`ResponseText` field is `json:"-"`) — only to the per-run markdown report. Keeps the JSONL lightweight, matching `test_runs.jsonl`'s existing metrics-only style.
-- Config is loaded via `defaultConfigPath()` (`~/.config/acc/config.json`), matching the existing `cmdDoctor`/`cmdModels`/`cmdClaude` convention in `cli.go` — not the repo's local `config.json` copy.
+- Config is loaded via `defaultConfigPath()` (`~/.config/azure/config.json`), matching the existing `cmdDoctor`/`cmdModels`/`cmdClaude` convention in `cli.go` — not the repo's local `config.json` copy.
 - `bench_runs.jsonl` and `bench_runs/` are runtime artifacts and must be gitignored, same as `test_runs.jsonl`.
 - No new files beyond `bench.go` and `bench_test.go` — this is a single-concern feature, matching the one-file-per-concern pattern already used by `translate.go`, `stream.go`, `tui.go`, `dashboard.go`.
 
@@ -61,7 +61,7 @@ type benchTarget struct {
 // benchTargets is the full cross-matrix test matrix: every persona's
 // primary and (where configured) fallback model, read live from
 // config.json at run time so a config edit (e.g. a temperature tweak) is
-// picked up on the next `acc bench` run with no code change. fable and
+// picked up on the next `azure bench` run with no code change. fable and
 // mythos are byte-identical in config.json today, so only "fable" is
 // tested, labeled "fable/mythos" — see the design doc for why.
 var benchTargets = []benchTarget{
@@ -1194,7 +1194,7 @@ git commit -m "feat(bench): add history diff, summary table, and markdown report
 - Consumes: `allBenchJobs`, `runBenchJob` (Task 4); `loadBenchHistory`, `buildDiffLines`, `buildSummaryTable`, `writeMarkdownReport` (Task 5); existing `defaultEnvPath()`, `defaultConfigPath()`, `loadDotenv(path string)`, `loadConfig(path string) (*Config, error)` from `cli.go`/`main.go`.
 - Produces: `func cmdBench()`.
 
-No dedicated unit test for this task — it's pure orchestration (goroutines, real stdout, real file I/O against hardcoded `~/.config/acc/...` paths) wiring together pieces that are each already tested. Per the design spec's own testing section, this function is verified by actually running it (Task 8), not mocked.
+No dedicated unit test for this task — it's pure orchestration (goroutines, real stdout, real file I/O against hardcoded `~/.config/azure/...` paths) wiring together pieces that are each already tested. Per the design spec's own testing section, this function is verified by actually running it (Task 8), not mocked.
 
 - [ ] **Step 1: Add imports and `cmdBench` to `bench.go`**
 
@@ -1217,7 +1217,7 @@ func cmdBench() {
 	loadDotenv(defaultEnvPath())
 	cfg, err := loadConfig(defaultConfigPath())
 	if err != nil {
-		fmt.Printf("  No config found. Run `acc setup` first. (%v)\n", err)
+		fmt.Printf("  No config found. Run `azure setup` first. (%v)\n", err)
 		return
 	}
 
@@ -1240,7 +1240,7 @@ func cmdBench() {
 	httpClient := &http.Client{Timeout: 5 * time.Minute}
 	results := make([]benchJobResult, len(jobs))
 
-	fmt.Printf("\n  acc bench — run %s, %d jobs (%d concurrent)\n\n", runID, len(jobs), benchConcurrency)
+	fmt.Printf("\n  azure bench — run %s, %d jobs (%d concurrent)\n\n", runID, len(jobs), benchConcurrency)
 
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, benchConcurrency)
@@ -1321,7 +1321,7 @@ git commit -m "feat(bench): add cmdBench worker-pool orchestration"
 
 **Interfaces:**
 - Consumes: `cmdBench()` (Task 6).
-- Produces: `acc bench` becomes a recognized subcommand.
+- Produces: `azure bench` becomes a recognized subcommand.
 
 - [ ] **Step 1: Add the `bench` case to `dispatch` in `cli.go`**
 
@@ -1383,17 +1383,17 @@ The current `printHelp` function (lines 60-73) reads:
 
 ```go
 func printHelp() {
-	fmt.Print(`acc — point Claude Code at cheaper models
+	fmt.Print(`azure — point Claude Code at cheaper models
 
 Usage:
-  acc                 Start the proxy (use -tui for the dashboard)
-  acc setup           Interactive first-time setup (keys + config)
-  acc doctor          Test that your provider keys work
-  acc models          List the model names you can use
-  acc claude [args]   Start the proxy and launch Claude Code through it
-  acc help            Show this help
+  azure                 Start the proxy (use -tui for the dashboard)
+  azure setup           Interactive first-time setup (keys + config)
+  azure doctor          Test that your provider keys work
+  azure models          List the model names you can use
+  azure claude [args]   Start the proxy and launch Claude Code through it
+  azure help            Show this help
 
-First time? Run:  acc setup
+First time? Run:  azure setup
 `)
 }
 ```
@@ -1402,18 +1402,18 @@ Change it to:
 
 ```go
 func printHelp() {
-	fmt.Print(`acc — point Claude Code at cheaper models
+	fmt.Print(`azure — point Claude Code at cheaper models
 
 Usage:
-  acc                 Start the proxy (use -tui for the dashboard)
-  acc setup           Interactive first-time setup (keys + config)
-  acc doctor          Test that your provider keys work
-  acc models          List the model names you can use
-  acc bench           Benchmark every persona + fallback, judged for quality
-  acc claude [args]   Start the proxy and launch Claude Code through it
-  acc help            Show this help
+  azure                 Start the proxy (use -tui for the dashboard)
+  azure setup           Interactive first-time setup (keys + config)
+  azure doctor          Test that your provider keys work
+  azure models          List the model names you can use
+  azure bench           Benchmark every persona + fallback, judged for quality
+  azure claude [args]   Start the proxy and launch Claude Code through it
+  azure help            Show this help
 
-First time? Run:  acc setup
+First time? Run:  azure setup
 `)
 }
 ```
@@ -1444,13 +1444,13 @@ Expected: `gofmt` reports no unformatted files, `go vet ./...` clean, `go build 
 - [ ] **Step 5: Verify the subcommand is recognized**
 
 Run: `go run . bench --help 2>&1 | head -5` is not applicable (bench takes no flags) — instead run: `go run . help`
-Expected: output includes the line `acc bench           Benchmark every persona + fallback, judged for quality`.
+Expected: output includes the line `azure bench           Benchmark every persona + fallback, judged for quality`.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add cli.go .gitignore
-git commit -m "feat(bench): wire acc bench into the CLI dispatch and help text"
+git commit -m "feat(bench): wire azure bench into the CLI dispatch and help text"
 ```
 
 ---
@@ -1469,14 +1469,14 @@ Expected: clean gofmt, clean vet, successful build, all tests PASS (race detecto
 - [ ] **Step 2: Build the binary**
 
 Run: `make build`
-Expected: produces `./acc` with no errors.
+Expected: produces `./azure` with no errors.
 
 - [ ] **Step 3: Run the real benchmark**
 
-Run: `./acc bench`
-Expected: prints `acc bench — run <id>, 56 jobs (5 concurrent)`, then 56 progress lines (`[n/56] identity/variant · prompt-id ... Nms, score N/10` or an `ERROR:` line), then the summary table, then either `(first run — no history to diff against)` or a diff block, then `Full report: bench_runs/<id>.md`. Total wall time roughly 4-8 minutes (Opus's primary, nemotron-3-ultra-550b, is the long pole — CLAUDE.md notes it can take 1-2+ min per call).
+Run: `./azure bench`
+Expected: prints `azure bench — run <id>, 56 jobs (5 concurrent)`, then 56 progress lines (`[n/56] identity/variant · prompt-id ... Nms, score N/10` or an `ERROR:` line), then the summary table, then either `(first run — no history to diff against)` or a diff block, then `Full report: bench_runs/<id>.md`. Total wall time roughly 4-8 minutes (Opus's primary, nemotron-3-ultra-550b, is the long pole — CLAUDE.md notes it can take 1-2+ min per call).
 
-If any job errors, that's expected and fine as long as it's a small minority — the whole point of the per-job error handling in Task 4 is that one bad call (rate limit, timeout, a provider hiccup) doesn't take down the other 55. A large fraction of errors (e.g. every NVIDIA call failing) signals a real problem — stop and check `~/.config/acc/.env` has working keys (`acc doctor` is the fast way to check) before re-running.
+If any job errors, that's expected and fine as long as it's a small minority — the whole point of the per-job error handling in Task 4 is that one bad call (rate limit, timeout, a provider hiccup) doesn't take down the other 55. A large fraction of errors (e.g. every NVIDIA call failing) signals a real problem — stop and check `~/.config/azure/.env` has working keys (`azure doctor` is the fast way to check) before re-running.
 
 - [ ] **Step 4: Inspect the output with True**
 

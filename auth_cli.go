@@ -53,7 +53,7 @@ func cmdAuth(args []string) {
 		}
 	case "logout":
 		if len(args) != 2 {
-			fmt.Println("  Usage: acc auth logout PROVIDER")
+			fmt.Println("  Usage: azure auth logout PROVIDER")
 			return
 		}
 		if err := logoutProvider(ctx, manager, args[1], providerModelCachePath()); err != nil {
@@ -64,14 +64,14 @@ func cmdAuth(args []string) {
 		fmt.Printf("  Logged out of %s. API keys and other providers were preserved.\n", provider)
 	case "login":
 		if len(args) < 2 {
-			fmt.Println("  Usage: acc auth login PROVIDER [--import-grok-cli|--import-claude-code|--experimental-oauth]")
+			fmt.Println("  Usage: azure auth login PROVIDER [--import-grok-cli|--import-claude-code|--experimental-oauth]")
 			return
 		}
 		if err := loginProvider(ctx, os.Stdout, manager, args[1], args[2:]); err != nil {
 			fmt.Printf("  Login failed: %v\n", err)
 		}
 	default:
-		fmt.Println("  Usage: acc auth list|login|status|logout")
+		fmt.Println("  Usage: azure auth list|login|status|logout")
 	}
 }
 
@@ -180,7 +180,7 @@ func loginProvider(ctx context.Context, out io.Writer, manager *authManager, pro
 	case "anthropic":
 		switch {
 		case flags["--import-claude-code"]:
-			fmt.Fprintln(out, "  Copying the existing Claude Code credential read-only. ACC will not modify the official credential.")
+			fmt.Fprintln(out, "  Copying the existing Claude Code credential read-only. Azure will not modify the official credential.")
 			credential, err = detectClaudeCodeCredential(ctx)
 		case flags["--experimental-oauth"]:
 			return fmt.Errorf("Anthropic subscription OAuth is not implemented: official third-party inference support could not be verified; use ANTHROPIC_API_KEY")
@@ -216,7 +216,7 @@ func refreshCatalogAfterLogin(ctx context.Context, out io.Writer, manager *authM
 	discoveryCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	if err := refreshProviderModelCache(discoveryCtx, &http.Client{Timeout: 15 * time.Second}, cfg, manager, provider); err != nil {
-		fmt.Fprintf(out, "  Login saved. Live model refresh failed, so ACC will use its static fallback catalog: %v\n", err)
+		fmt.Fprintf(out, "  Login saved. Live model refresh failed, so Azure will use its static fallback catalog: %v\n", err)
 		return nil
 	}
 	fmt.Fprintln(out, "  Refreshed the provider's real-model catalog.")

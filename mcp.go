@@ -49,6 +49,7 @@ type mcpToolHandler func(context.Context, map[string]any) (any, error)
 
 type mcpServer struct {
 	Name     string
+	Title    string
 	Version  string
 	Tools    []mcpTool
 	Handlers map[string]mcpToolHandler
@@ -69,10 +70,14 @@ func (s *mcpServer) handleContext(ctx context.Context, req mcpRequest) mcpRespon
 		if json.Unmarshal(req.Params, &params) == nil && params.ProtocolVersion != "" {
 			protocol = params.ProtocolVersion
 		}
+		info := map[string]any{"name": s.Name, "version": s.Version}
+		if s.Title != "" {
+			info["title"] = s.Title
+		}
 		response.Result = map[string]any{
 			"protocolVersion": protocol,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
-			"serverInfo":      map[string]any{"name": s.Name, "version": s.Version},
+			"serverInfo":      info,
 		}
 	case "notifications/initialized":
 		response.NoResponse = true
@@ -158,15 +163,15 @@ func renderMCPConfig(executable string, includeRaw bool) ([]byte, error) {
 
 func bundledMCPServers(executable string, includeRaw bool) map[string]mcpConfigServer {
 	servers := map[string]mcpConfigServer{
-		"acc-websearch": {
+		"azure-websearch": {
 			Type: "stdio", Command: executable, Args: []string{"mcp", "serve", "websearch"},
 		},
-		"acc-mac-control": {
+		"azure-mac-control": {
 			Type: "stdio", Command: executable, Args: []string{"mcp", "serve", "mac-control"},
 		},
 	}
 	if includeRaw {
-		servers["acc-osascript"] = mcpConfigServer{
+		servers["azure-osascript"] = mcpConfigServer{
 			Type: "stdio", Command: executable, Args: []string{"mcp", "serve", "osascript"},
 		}
 	}
@@ -174,7 +179,7 @@ func bundledMCPServers(executable string, includeRaw bool) map[string]mcpConfigS
 }
 
 func defaultMCPConfigPath() string {
-	return filepath.Join(accDir(), "mcp.json")
+	return filepath.Join(azureDir(), "mcp.json")
 }
 
 func writeMCPConfig(path, executable string, includeRaw bool) error {
@@ -241,7 +246,7 @@ func installClaude3PMCPConfig(path, executable string, includeRaw bool) (string,
 	if err := os.WriteFile(backup, original, info.Mode().Perm()); err != nil {
 		return "", fmt.Errorf("back up Claude-3p config: %w", err)
 	}
-	temporary := path + ".acc-tmp"
+	temporary := path + ".azure-tmp"
 	if err := os.WriteFile(temporary, updated, info.Mode().Perm()); err != nil {
 		return "", fmt.Errorf("write Claude-3p config: %w", err)
 	}
@@ -291,7 +296,7 @@ func cmdMCP(args []string) {
 	switch args[0] {
 	case "serve":
 		if len(args) != 2 {
-			fmt.Fprintln(os.Stderr, "Usage: acc mcp serve <websearch|mac-control|osascript>")
+			fmt.Fprintln(os.Stderr, "Usage: azure mcp serve <websearch|mac-control|osascript>")
 			return
 		}
 		server, err := mcpServerByName(args[1])
@@ -303,19 +308,19 @@ func cmdMCP(args []string) {
 			fmt.Fprintln(os.Stderr, "MCP server failed:", err)
 		}
 	case "install":
-		flags := flag.NewFlagSet("acc mcp install", flag.ContinueOnError)
+		flags := flag.NewFlagSet("azure mcp install", flag.ContinueOnError)
 		flags.SetOutput(io.Discard)
 		includeRaw := false
 		claude3P := false
 		flags.BoolVar(&includeRaw, "include-raw-osascript", false, "include unrestricted AppleScript/JXA execution")
-		flags.BoolVar(&claude3P, "claude-3p", false, "merge ACC servers into Claude-3p desktop config")
+		flags.BoolVar(&claude3P, "claude-3p", false, "merge Azure servers into Claude-3p desktop config")
 		if err := flags.Parse(args[1:]); err != nil {
-			fmt.Println("Usage: acc mcp install [--claude-3p] [--include-raw-osascript]")
+			fmt.Println("Usage: azure mcp install [--claude-3p] [--include-raw-osascript]")
 			return
 		}
 		executable, err := os.Executable()
 		if err != nil {
-			fmt.Println("  Could not locate acc:", err)
+			fmt.Println("  Could not locate azure:", err)
 			return
 		}
 		path := defaultMCPConfigPath()
@@ -337,7 +342,7 @@ func cmdMCP(args []string) {
 				fmt.Println("  Could not write MCP config:", err)
 				return
 			}
-			fmt.Printf("  Installed ACC MCP config at %s\n", path)
+			fmt.Printf("  Installed Azure MCP config at %s\n", path)
 		}
 		fmt.Println("  Enabled: websearch, mac-control")
 		if includeRaw {
@@ -355,7 +360,7 @@ func cmdMCP(args []string) {
 }
 
 func cmdMCPDoctor() {
-	fmt.Println("\n  acc mcp doctor")
+	fmt.Println("\n  azure mcp doctor")
 	fmt.Printf("  %-14s OK (%d tools)\n", "websearch", len(newWebsearchMCPServer().Tools))
 	if runtime.GOOS != "darwin" {
 		fmt.Printf("  %-14s unavailable (macOS only)\n", "mac-control")
@@ -373,7 +378,7 @@ func cmdMCPDoctor() {
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		fmt.Printf("  %-14s missing (run `acc mcp install`)\n\n", "config")
+		fmt.Printf("  %-14s missing (run `azure mcp install`)\n\n", "config")
 		return
 	}
 	if err := json.Unmarshal(data, &config); err != nil {
@@ -389,14 +394,14 @@ func cmdMCPDoctor() {
 }
 
 func printMCPHelp() {
-	fmt.Print(`acc mcp — bundled local tools
+	fmt.Print(`azure mcp — bundled local tools
 
 Usage:
-  acc mcp install                         Install safe Claude MCP config
-  acc mcp install --claude-3p             Replace legacy tools in Claude-3p
-  acc mcp install --include-raw-osascript Also enable unrestricted AppleScript/JXA
-  acc mcp doctor                          Check bundled tools and config
-  acc mcp serve <name>                    Run one stdio MCP server
+  azure mcp install                         Install safe Claude MCP config
+  azure mcp install --claude-3p             Replace legacy tools in Claude-3p
+  azure mcp install --include-raw-osascript Also enable unrestricted AppleScript/JXA
+  azure mcp doctor                          Check bundled tools and config
+  azure mcp serve <name>                    Run one stdio MCP server
 `)
 }
 

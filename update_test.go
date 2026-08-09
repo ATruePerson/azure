@@ -36,10 +36,10 @@ func TestUpdateAssetNameSupportsReleaseTargets(t *testing.T) {
 	for _, test := range []struct {
 		goos, goarch, want string
 	}{
-		{"darwin", "arm64", "acc-darwin-arm64"},
-		{"darwin", "amd64", "acc-darwin-amd64"},
-		{"linux", "arm64", "acc-linux-arm64"},
-		{"linux", "amd64", "acc-linux-amd64"},
+		{"darwin", "arm64", "azure-darwin-arm64"},
+		{"darwin", "amd64", "azure-darwin-amd64"},
+		{"linux", "arm64", "azure-linux-arm64"},
+		{"linux", "amd64", "azure-linux-amd64"},
 	} {
 		got, err := updateAssetName(test.goos, test.goarch)
 		if err != nil || got != test.want {
@@ -52,17 +52,17 @@ func TestUpdateAssetNameSupportsReleaseTargets(t *testing.T) {
 }
 
 func TestUpdateChecksumAndArchiveValidation(t *testing.T) {
-	archive := makeUpdateArchive(t, "acc-linux-amd64", []byte("binary"))
+	archive := makeUpdateArchive(t, "azure-linux-amd64", []byte("binary"))
 	sum := sha256.Sum256(archive)
-	parsed, err := parseUpdateChecksum([]byte(hex.EncodeToString(sum[:]) + "  acc-linux-amd64.tar.gz\n"))
+	parsed, err := parseUpdateChecksum([]byte(hex.EncodeToString(sum[:]) + "  azure-linux-amd64.tar.gz\n"))
 	if err != nil || parsed != sum {
 		t.Fatalf("checksum parse = %x, %v; want %x", parsed, err, sum)
 	}
-	binary, err := extractUpdateBinary(archive, "acc-linux-amd64")
+	binary, err := extractUpdateBinary(archive, "azure-linux-amd64")
 	if err != nil || string(binary) != "binary" {
 		t.Fatalf("extract = %q, %v", binary, err)
 	}
-	if _, err := extractUpdateBinary(archive, "acc-linux-arm64"); err == nil {
+	if _, err := extractUpdateBinary(archive, "azure-linux-arm64"); err == nil {
 		t.Fatal("archive missing the expected asset was accepted")
 	}
 }
@@ -71,12 +71,12 @@ func TestInstallUpdatedBinaryIsExecutableAndAtomic(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("release updater supports macOS and Linux")
 	}
-	destination := filepath.Join(t.TempDir(), "acc")
-	old := []byte("#!/bin/sh\necho old acc\n")
+	destination := filepath.Join(t.TempDir(), "azure")
+	old := []byte("#!/bin/sh\necho old azure\n")
 	if err := os.WriteFile(destination, old, 0755); err != nil {
 		t.Fatal(err)
 	}
-	updated := []byte("#!/bin/sh\necho acc updated\n")
+	updated := []byte("#!/bin/sh\necho azure updated\n")
 	if err := installUpdatedBinary(destination, updated); err != nil {
 		t.Fatal(err)
 	}

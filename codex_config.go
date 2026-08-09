@@ -18,7 +18,7 @@ type codexRoutingState struct {
 	Catalog               string
 	Model                 string
 	RootBaseURL           string
-	ActiveACC             bool
+	ActiveAzure           bool
 	ActiveOpenCodex       bool
 	ActiveCustomRouting   bool
 	ProviderPrefixedModel bool
@@ -179,7 +179,7 @@ func codexManagedProviderBlock(block codexTOMLBlock) bool {
 	if !ok {
 		return false
 	}
-	if provider == "acc" || strings.Contains(provider, "opencodex") {
+	if provider == "azure" || provider == "acc" || strings.Contains(provider, "opencodex") {
 		return true
 	}
 	for _, line := range block.Lines[1:] {
@@ -213,7 +213,8 @@ func sanitizeCodexConfig(original string, removeWebSearch bool) string {
 		}
 		if index > 0 {
 			for _, line := range block.Lines {
-				if strings.EqualFold(strings.TrimSpace(line), "# Auto-injected by opencodex") {
+				trimmed := strings.TrimSpace(line)
+				if strings.EqualFold(trimmed, "# Auto-injected by opencodex") || isAzureCodexProviderMarker(trimmed) {
 					continue
 				}
 				out.WriteString(line)
@@ -223,25 +224,21 @@ func sanitizeCodexConfig(original string, removeWebSearch bool) string {
 		inOwned := false
 		for _, line := range block.Lines {
 			trimmed := strings.TrimSpace(line)
-			switch trimmed {
-			case accCodexRootBegin:
+			if isAzureCodexRootBegin(trimmed) {
 				inOwned = true
-				out.WriteString(line)
-				continue
-			case accCodexRootEnd:
-				inOwned = false
-				out.WriteString(line)
 				continue
 			}
-			if trimmed == accCodexProvider || strings.EqualFold(trimmed, "# Auto-injected by opencodex") {
+			if isAzureCodexRootEnd(trimmed) {
+				inOwned = false
+				continue
+			}
+			if isAzureCodexProviderMarker(trimmed) || strings.EqualFold(trimmed, "# Auto-injected by opencodex") {
 				continue
 			}
 			if inOwned {
-				// Inside ACC-owned section: keep the line as-is
-				out.WriteString(line)
 				continue
 			}
-			// Outside ACC-owned section: check if we should remove this line
+			// Outside Azure-owned section: check if we should remove this line
 			key, _, ok := codexAssignment(line)
 			if ok {
 				switch key {
@@ -259,6 +256,18 @@ func sanitizeCodexConfig(original string, removeWebSearch bool) string {
 	return out.String()
 }
 
+func isAzureCodexRootBegin(line string) bool {
+	return line == azureCodexRootBegin || line == "# BEGIN ACC CODEX OWNED"
+}
+
+func isAzureCodexRootEnd(line string) bool {
+	return line == azureCodexRootEnd || line == "# END ACC CODEX OWNED"
+}
+
+func isAzureCodexProviderMarker(line string) bool {
+	return line == azureCodexProvider || line == "# ACC CODEX OWNED PROVIDER"
+}
+
 func codexNewline(text string) string {
 	if strings.Contains(text, "\r\n") {
 		return "\r\n"
@@ -266,8 +275,8 @@ func codexNewline(text string) string {
 	return "\n"
 }
 
-func renderCodexACCConfig(original, catalogPath, baseURL, model, effort string) string {
-	// ACC temporarily owns web_search while active. The durable subscription
+func renderCodexAzureConfig(original, catalogPath, baseURL, model, effort string) string {
+	// Azure temporarily owns web_search while active. The durable subscription
 	// baseline keeps the user's original value and restore puts it back.
 	sanitized := sanitizeCodexConfig(original, true)
 	newline := codexNewline(original)
@@ -286,15 +295,15 @@ func renderCodexACCConfig(original, catalogPath, baseURL, model, effort string) 
 		out.WriteString(root)
 		out.WriteString(newline)
 	}
-	out.WriteString(accCodexRootBegin + newline)
+	out.WriteString(azureCodexRootBegin + newline)
 	out.WriteString("model = " + strconv.Quote(model) + newline)
 	if effort != "" {
 		out.WriteString("model_reasoning_effort = " + strconv.Quote(effort) + newline)
 	}
-	out.WriteString(`model_provider = "acc"` + newline)
+	out.WriteString(`model_provider = "azure"` + newline)
 	out.WriteString("model_catalog_json = " + strconv.Quote(catalogPath) + newline)
 	out.WriteString(`web_search = "disabled"` + newline)
-	out.WriteString(accCodexRootEnd + newline + newline)
+	out.WriteString(azureCodexRootEnd + newline + newline)
 	out.WriteString(strings.TrimLeft(rest, "\r\n"))
 	if rest != "" && !strings.HasSuffix(out.String(), newline) {
 		out.WriteString(newline)
@@ -302,9 +311,9 @@ func renderCodexACCConfig(original, catalogPath, baseURL, model, effort string) 
 	if rest != "" {
 		out.WriteString(newline)
 	}
-	out.WriteString(accCodexProvider + newline)
-	out.WriteString("[model_providers.acc]" + newline)
-	out.WriteString(`name = "ACC"` + newline)
+	out.WriteString(azureCodexProvider + newline)
+	out.WriteString("[model_providers.azure]" + newline)
+	out.WriteString(`name = "Azure"` + newline)
 	out.WriteString("base_url = " + strconv.Quote(strings.TrimRight(baseURL, "/")) + newline)
 	out.WriteString(`wire_api = "responses"` + newline)
 	out.WriteString("requires_openai_auth = true" + newline)
@@ -365,13 +374,13 @@ func inspectCodexRouting(config string) codexRoutingState {
 	}
 	state.ProviderPrefixedModel = strings.Contains(state.Model, "/")
 	state.ActiveOpenCodex = strings.Contains(selectedProvider, "opencodex") || codexURLUsesPort(endpoint, "10100") || strings.Contains(strings.ToLower(filepath.Base(root["model_catalog_json"])), "opencodex")
-	state.ActiveACC = selectedProvider == "acc" || codexURLUsesPort(endpoint, "9999")
+	state.ActiveAzure = selectedProvider == "azure" || selectedProvider == "acc" || codexURLUsesPort(endpoint, "9999")
 	state.ActiveCustomRouting = root["model_provider"] != "" || root["model_catalog_json"] != "" || root["openai_base_url"] != "" || state.ProviderPrefixedModel
 	switch {
 	case state.ActiveOpenCodex:
 		state.Mode = "OpenCodex"
-	case state.ActiveACC:
-		state.Mode = "ACC"
+	case state.ActiveAzure:
+		state.Mode = "Azure"
 	case state.ActiveCustomRouting:
 		if strings.EqualFold(root["model_provider"], "openai") && root["model_catalog_json"] == "" && root["openai_base_url"] == "" && !state.ProviderPrefixedModel {
 			state.Mode = "Subscription"
@@ -430,15 +439,15 @@ func validateCodexLoopbackBaseURL(raw string) error {
 		return err
 	}
 	if parsed.Scheme != "http" || parsed.User != nil {
-		return fmt.Errorf("ACC Codex base URL must be unauthenticated HTTP loopback")
+		return fmt.Errorf("Azure Codex base URL must be unauthenticated HTTP loopback")
 	}
 	host := parsed.Hostname()
 	ip := net.ParseIP(host)
 	if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
-		return fmt.Errorf("ACC Codex base URL is not loopback-only")
+		return fmt.Errorf("Azure Codex base URL is not loopback-only")
 	}
 	if !strings.HasSuffix(strings.TrimRight(parsed.Path, "/"), "/v1") {
-		return fmt.Errorf("ACC Codex base URL must end in /v1")
+		return fmt.Errorf("Azure Codex base URL must end in /v1")
 	}
 	return nil
 }

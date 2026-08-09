@@ -267,10 +267,10 @@ func cleanInlineText(source string) string {
 func newWebsearchMCPServer() *mcpServer {
 	readOnlyOpen := map[string]any{"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": true}
 	server := &mcpServer{
-		Name: "acc-websearch", Version: "3.0.0",
+		Name: "azure-websearch", Title: "Azure Web Search", Version: "3.0.0",
 		Tools: []mcpTool{
 			{
-				Name: "web_search", Description: "Keyless engagement-first search across Hacker News, GitHub, Polymarket, Reddit, and the general web. Individual source failures are returned without losing successful sources.",
+				Name: "web_search", Description: "Azure Web Search: keyless engagement-first search across Hacker News, GitHub, Polymarket, Reddit, and the general web. Individual source failures are returned without losing successful sources.",
 				Annotations: readOnlyOpen,
 				InputSchema: objectSchema(map[string]any{
 					"query":   map[string]any{"type": "string", "description": "Search query"},

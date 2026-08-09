@@ -3,51 +3,51 @@
 The supported path is direct and loopback-only:
 
 ```text
-Codex Desktop -> ACC 127.0.0.1:<port> -> exact provider/model
+Codex Desktop -> Azure 127.0.0.1:<port> -> exact provider/model
 ```
 
-OpenCodex is not a runtime, setup, auth, catalog, or lifecycle dependency. ACC does not start OpenCodex or modify its credentials.
+OpenCodex is not a runtime, setup, auth, catalog, or lifecycle dependency. Azure does not start OpenCodex or modify its credentials.
 
 ## Commands
 
 ```text
-acc codex setup [--model PROVIDER/MODEL]
-acc codex start [--model PROVIDER/MODEL]
-acc codex stop
-acc codex status
-acc codex doctor
-acc codex restore
-acc codex remove
+azure codex setup [--model PROVIDER/MODEL]
+azure codex start [--model PROVIDER/MODEL]
+azure codex stop
+azure codex status
+azure codex doctor
+azure codex restore
+azure codex remove
 ```
 
-`setup` prepares the direct ACC Responses provider without starting a process. `start` prepares the same configuration, starts one ACC-owned process, and verifies the loopback endpoint, `/v1/responses`, selected model, and generated catalog. `stop` terminates only the recorded ACC-owned process. `restore` and `remove` both stop that owned process and return Codex to a sanitized subscription configuration. `status` never displays secrets. `doctor` is read-only.
+`setup` prepares the direct Azure Responses provider without starting a process. `start` prepares the same configuration, starts one Azure-owned process, and verifies the loopback endpoint, `/v1/responses`, selected model, and generated catalog. `stop` terminates only the recorded Azure-owned process. `restore` and `remove` both stop that owned process and return Codex to a sanitized subscription configuration. `status` never displays secrets. `doctor` is read-only.
 
 ## Durable subscription baseline
 
-Before ACC takes control, it creates `~/.config/acc/codex-restore.json` with:
+Before Azure takes control, it creates `~/.config/azure/codex-restore.json` with:
 
 1. A raw snapshot of the original `~/.codex/config.toml` and actively referenced catalog files, including whether each file existed.
-2. A sanitized subscription baseline that preserves unrelated bytes and removes only active custom model routing, ACC-owned blocks, ACC/OpenCodex loopback providers, custom catalog references, and root custom models.
+2. A sanitized subscription baseline that preserves unrelated bytes and removes only active custom model routing, Azure-owned blocks, Azure/OpenCodex loopback providers, custom catalog references, and root custom models.
 
-A valid baseline is never overwritten by repeated `start` calls. If the current config already points to ACC or OpenCodex, the custom routing is not accepted as the subscription baseline. ACC saves the raw state for recovery and stores the sanitized result as the restore target.
+A valid baseline is never overwritten by repeated `start` calls. If the current config already points to Azure or OpenCodex, the custom routing is not accepted as the subscription baseline. Azure saves the raw state for recovery and stores the sanitized result as the restore target.
 
 Every mutation receives a private timestamped backup first. Writes are atomic. A failed configuration, catalog, process, or endpoint verification rolls the command back to its pre-command files.
 
 ## Restore and recovery
 
-`acc codex restore` restores the sanitized baseline, not a stale raw OpenCodex configuration. It removes active references to ACC, OpenCodex, ports `9999` and `10100`, `model_catalog_json`, and provider-prefixed root models. It deletes only catalogs proven to be ACC/OpenCodex-generated and located in known managed locations. Raw baseline data and timestamped backups remain available for recovery.
+`azure codex restore` restores the sanitized baseline, not a stale raw OpenCodex configuration. It removes active references to Azure, OpenCodex, ports `9999` and `10100`, `model_catalog_json`, and provider-prefixed root models. It deletes only catalogs proven to be Azure/OpenCodex-generated and located in known managed locations. Raw baseline data and timestamped backups remain available for recovery.
 
 If no valid baseline exists, restore enters recovery mode. It first backs up the current files, constructs a sanitized subscription baseline from the current config, restores it atomically, and reports that recovery mode was used. Repeated restore calls are safe no-ops.
 
-ACC never deletes `~/.codex`, login files, projects, history, MCP servers, trust settings, sandbox settings, approvals, skills, or unrelated preferences. It never edits provider keys or `~/.config/acc/.env`.
+Azure never deletes `~/.codex`, login files, projects, history, MCP servers, trust settings, sandbox settings, approvals, skills, or unrelated preferences. It never edits provider keys or `~/.config/azure/.env`.
 
 ## Status and doctor
 
 Status reports:
 
 ```text
-Mode: Subscription | ACC | OpenCodex | Unknown
-ACC process: Running | Stopped
+Mode: Subscription | Azure | OpenCodex | Unknown
+Azure process: Running | Stopped
 Codex endpoint: ...
 Active model provider: ...
 Active catalog: ...
@@ -74,15 +74,15 @@ Catalog IDs are deterministic, unique, provider-prefixed, and exclude the Claude
 ## Authentication
 
 ```text
-acc auth list
-acc auth login kimi
-acc auth login xai
-acc auth login grok
-acc auth login anthropic
-acc auth status [PROVIDER]
-acc auth logout PROVIDER
+azure auth list
+azure auth login kimi
+azure auth login xai
+azure auth login grok
+azure auth login anthropic
+azure auth status [PROVIDER]
+azure auth logout PROVIDER
 ```
 
-OAuth credentials are isolated by provider in macOS Keychain. ACC verifies that Codex authentication-like files are unchanged across lifecycle mutations and never prints their contents.
+OAuth credentials are isolated by provider in macOS Keychain. Azure verifies that Codex authentication-like files are unchanged across lifecycle mutations and never prints their contents.
 
-For provider trouble, run `acc auth status PROVIDER`, then log out and log in again. For an API-key rotation, revoke the old key at the provider, update the private `~/.config/acc/.env`, and restart ACC. Never paste a key into `config.json`, `config.toml`, a model catalog, logs, an issue, or a commit.
+For provider trouble, run `azure auth status PROVIDER`, then log out and log in again. For an API-key rotation, revoke the old key at the provider, update the private `~/.config/azure/.env`, and restart Azure. Never paste a key into `config.json`, `config.toml`, a model catalog, logs, an issue, or a commit.

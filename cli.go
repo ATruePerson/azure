@@ -37,7 +37,7 @@ func knownProviders() []providerInfo {
 	}
 }
 
-// dispatch handles `acc <subcommand>`. Returns true if a subcommand ran, so
+// dispatch handles `azure <subcommand>`. Returns true if a subcommand ran, so
 // main() can skip starting the server. Unknown first args fall through to the
 // normal flag-based server path.
 func dispatch(args []string) bool {
@@ -70,57 +70,58 @@ func dispatch(args []string) bool {
 }
 
 func printHelp() {
-	fmt.Print(`acc — point Claude Code at cheaper models
+	fmt.Print(`azure — point Claude Code at cheaper models
 
 Usage:
-  acc                 Start the proxy (use -tui for the dashboard)
-  acc setup           Interactive first-time setup (keys + config)
-  acc doctor          Test that your provider keys work
-  acc models          List the model names you can use
-  acc bench           Benchmark every persona + fallback, judged for quality
-  acc claude [args]   Start the proxy and launch Claude Code through it
-	acc codex setup      Back up Codex and point it directly at ACC
-	acc codex start      Start an owned ACC service and verify Responses
-	acc codex stop       Stop only the ACC process started by this command
-	acc codex status     Show direct config, catalog, process, and auth state
-	acc codex doctor     Run deterministic integration checks
-	acc codex restore    Restore the previous Codex settings
-	acc codex remove     Remove only ACC-owned Codex settings
-		acc codex [path]     Legacy direct ACC launcher
-	  acc auth list       List native authentication methods
-	  acc auth login      Log in to kimi, xai/grok, or anthropic
-	  acc auth status     Show safe provider login status
-	  acc auth logout     Remove only one provider's ACC credential
-  acc mcp install     Install ACC's bundled local tools for Claude Code
+  azure                 Start the proxy (use -tui for the dashboard)
+  azure setup           Interactive first-time setup (keys + config)
+  azure doctor          Test that your provider keys work
+  azure models          List the model names you can use
+  azure bench           Benchmark every persona + fallback, judged for quality
+  azure claude [args]   Start the proxy and launch Claude Code through it
+	azure codex setup      Back up Codex and point it directly at Azure
+	azure codex start      Start an owned Azure service and verify Responses
+	azure codex stop       Stop only the Azure process started by this command
+	azure codex status     Show direct config, catalog, process, and auth state
+	azure codex doctor     Run deterministic integration checks
+	azure codex restore    Restore the previous Codex settings
+	azure codex remove     Remove only Azure-owned Codex settings
+		azure codex [path]     Legacy direct Azure launcher
+	  azure auth list       List native authentication methods
+	  azure auth login      Log in to kimi, xai/grok, or anthropic
+	  azure auth status     Show safe provider login status
+	  azure auth logout     Remove only one provider's Azure credential
+  azure mcp install     Install Azure's bundled local tools for Claude Code
                       (use --claude-3p --include-obsidian for Obsidian)
-  acc mcp doctor      Check bundled local tools
-  acc help            Show this help
+  azure mcp doctor      Check bundled local tools
+  azure help            Show this help
 
-First time? Run:  acc setup
+First time? Run:  azure setup
 `)
 }
 
 // ---------- paths ----------
 
-func accDir() string {
+func azureDir() string {
+	ensureAzureConfigMigrated()
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ".config/acc"
+		return ".config/azure"
 	}
-	return filepath.Join(home, ".config", "acc")
+	return filepath.Join(home, ".config", "azure")
 }
 
-func defaultEnvPath() string    { return filepath.Join(accDir(), ".env") }
-func defaultConfigPath() string { return filepath.Join(accDir(), "config.json") }
+func defaultEnvPath() string    { return filepath.Join(azureDir(), ".env") }
+func defaultConfigPath() string { return filepath.Join(azureDir(), "config.json") }
 
 // ---------- setup wizard ----------
 
 func cmdSetup() {
 	in := bufio.NewReader(os.Stdin)
 	fmt.Print(`
-  acc setup
+  azure setup
   ─────────
-  This sets up acc so Claude Code can use cheaper models.
+  This sets up azure so Claude Code can use cheaper models.
   You'll paste API keys for any providers you have. Skip the rest.
 
 `)
@@ -137,11 +138,11 @@ func cmdSetup() {
 	}
 
 	if len(keys) == 0 {
-		fmt.Println("  No keys entered — nothing to save. Run `acc setup` again when you have one.")
+		fmt.Println("  No keys entered — nothing to save. Run `azure setup` again when you have one.")
 		return
 	}
 
-	dir := accDir()
+	dir := azureDir()
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		fmt.Printf("  Could not create %s: %v\n", dir, err)
 		return
@@ -177,9 +178,9 @@ func cmdSetup() {
 	fmt.Print(`
   Done. Start using it with:
 
-      acc claude
+      azure claude
 
-  That launches Claude Code through acc. Happy hacking.
+  That launches Claude Code through azure. Happy hacking.
 `)
 }
 
@@ -192,7 +193,7 @@ func renderEnv(keys map[string]string) string {
 	}
 	sort.Strings(names)
 	var b strings.Builder
-	b.WriteString("# acc provider API keys — keep this file private\n")
+	b.WriteString("# azure provider API keys — keep this file private\n")
 	for _, n := range names {
 		fmt.Fprintf(&b, "%s=%s\n", n, keys[n])
 	}
@@ -205,7 +206,7 @@ func cmdDoctor() {
 	envPath := defaultEnvPath()
 	loadDotenv(envPath)
 
-	fmt.Printf("\n  acc doctor — checking provider keys (%s)\n\n", envPath)
+	fmt.Printf("\n  azure doctor — checking provider keys (%s)\n\n", envPath)
 	any := false
 	for _, p := range knownProviders() {
 		key := os.Getenv(p.EnvVar)
@@ -217,7 +218,7 @@ func cmdDoctor() {
 		printPing(p, key)
 	}
 	if !any {
-		fmt.Print("\n  No keys configured yet. Run `acc setup`.\n")
+		fmt.Print("\n  No keys configured yet. Run `azure setup`.\n")
 	}
 	fmt.Println()
 }
@@ -307,39 +308,39 @@ func cmdModels() {
 func cmdClaude(extra []string) {
 	cfg, err := loadConfig(defaultConfigPath())
 	if err != nil {
-		fmt.Printf("  No config found. Run `acc setup` first. (%v)\n", err)
+		fmt.Printf("  No config found. Run `azure setup` first. (%v)\n", err)
 		return
 	}
 	loadDotenv(defaultEnvPath())
 
 	base := fmt.Sprintf("http://localhost:%d", cfg.Port)
 	if !proxyAlive(base) {
-		fmt.Printf("  Starting acc on port %d...\n", cfg.Port)
+		fmt.Printf("  Starting azure on port %d...\n", cfg.Port)
 		if err := startProxyDetached(); err != nil {
-			fmt.Printf("  Could not start acc: %v\n", err)
+			fmt.Printf("  Could not start azure: %v\n", err)
 			return
 		}
 		if !waitForProxy(base, 10*time.Second) {
-			fmt.Println("  acc did not come up in time. Try `acc` in another terminal.")
+			fmt.Println("  azure did not come up in time. Try `azure` in another terminal.")
 			return
 		}
 	}
 
 	claude, err := exec.LookPath("claude")
 	if err != nil {
-		fmt.Printf("  Claude Code not found on PATH. acc is running at %s —\n  set ANTHROPIC_BASE_URL=%s in your client.\n", base, base)
+		fmt.Printf("  Claude Code not found on PATH. azure is running at %s —\n  set ANTHROPIC_BASE_URL=%s in your client.\n", base, base)
 		return
 	}
 
-	fmt.Printf("  Launching Claude Code through acc (%s)...\n\n", base)
+	fmt.Printf("  Launching Claude Code through azure (%s)...\n\n", base)
 	self, err := os.Executable()
 	if err != nil {
-		fmt.Printf("  Could not locate acc for MCP tools: %v\n", err)
+		fmt.Printf("  Could not locate azure for MCP tools: %v\n", err)
 		return
 	}
 	mcpConfig, err := ensureMCPConfig(self)
 	if err != nil {
-		fmt.Printf("  Could not prepare ACC MCP tools: %v\n", err)
+		fmt.Printf("  Could not prepare Azure MCP tools: %v\n", err)
 		return
 	}
 	cmd := exec.Command(claude, claudeArgsWithMCP(extra, mcpConfig)...)
@@ -348,7 +349,7 @@ func cmdClaude(extra []string) {
 	cmd.Run()
 }
 
-const codexExperimentalNotice = "EXPERIMENTAL: Codex integration is a work in progress and can still break. Run `acc codex restore` to return to your normal subscription."
+const codexExperimentalNotice = "EXPERIMENTAL: Codex integration is a work in progress and can still break. Run `azure codex restore` to return to your normal subscription."
 
 // Kept as a stable offline seed for callers that need a constant. Runtime
 // commands choose the first available real model from the generated catalog.
@@ -372,19 +373,19 @@ func cmdCodex(args []string) {
 }
 
 func cmdCodexLegacy(args []string) {
-	flags := flag.NewFlagSet("acc codex", flag.ContinueOnError)
+	flags := flag.NewFlagSet("azure codex", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	model := ""
 	restore := false
-	flags.StringVar(&model, "model", "", "ACC model alias to use")
-	flags.StringVar(&model, "m", "", "ACC model alias to use")
+	flags.StringVar(&model, "model", "", "Azure model alias to use")
+	flags.StringVar(&model, "m", "", "Azure model alias to use")
 	flags.BoolVar(&restore, "restore", false, "restore the previous Codex subscription settings")
 	if err := flags.Parse(args); err != nil {
-		fmt.Println("  Usage: acc codex [--model MODEL] [path] | acc codex restore")
+		fmt.Println("  Usage: azure codex [--model MODEL] [path] | azure codex restore")
 		return
 	}
 	if len(flags.Args()) > 1 {
-		fmt.Println("  Usage: acc codex [--model MODEL] [path] | acc codex restore")
+		fmt.Println("  Usage: azure codex [--model MODEL] [path] | azure codex restore")
 		return
 	}
 	var cfg *Config
@@ -392,7 +393,7 @@ func cmdCodexLegacy(args []string) {
 		var err error
 		cfg, err = loadConfig(defaultConfigPath())
 		if err != nil {
-			fmt.Printf("  No config found. Run `acc setup` first. (%v)\n", err)
+			fmt.Printf("  No config found. Run `azure setup` first. (%v)\n", err)
 			return
 		}
 		if model == "" {
@@ -403,7 +404,7 @@ func cmdCodexLegacy(args []string) {
 			}
 		}
 		if !isCodexModel(cfg, model) {
-			fmt.Printf("  Unknown or disabled ACC model %q. Run `acc models` to list enabled model IDs.\n", model)
+			fmt.Printf("  Unknown or disabled Azure model %q. Run `azure models` to list enabled model IDs.\n", model)
 			return
 		}
 	}
@@ -414,8 +415,8 @@ func cmdCodexLegacy(args []string) {
 		return
 	}
 	codexConfig := filepath.Join(home, ".codex", "config.toml")
-	codexCatalog := filepath.Join(home, ".codex", "acc-models.json")
-	restoreState := filepath.Join(accDir(), "codex-restore.json")
+	codexCatalog := filepath.Join(home, ".codex", "azure-models.json")
+	restoreState := filepath.Join(azureDir(), "codex-restore.json")
 	path := "."
 	if len(flags.Args()) == 1 {
 		path = flags.Args()[0]
@@ -436,13 +437,13 @@ func cmdCodexLegacy(args []string) {
 
 	base := fmt.Sprintf("http://localhost:%d", cfg.Port)
 	if !proxyAlive(base) {
-		fmt.Printf("  Starting acc on port %d...\n", cfg.Port)
+		fmt.Printf("  Starting azure on port %d...\n", cfg.Port)
 		if err := startProxyDetached(); err != nil {
-			fmt.Printf("  Could not start acc: %v\n", err)
+			fmt.Printf("  Could not start azure: %v\n", err)
 			return
 		}
 		if !waitForProxy(base, 10*time.Second) {
-			fmt.Println("  acc did not come up in time. Try `acc` in another terminal.")
+			fmt.Println("  azure did not come up in time. Try `azure` in another terminal.")
 			return
 		}
 	}
@@ -458,7 +459,7 @@ func cmdCodexLegacy(args []string) {
 		return
 	}
 
-	fmt.Printf("  Codex is using ACC model %s. Reopening Codex...\n\n", model)
+	fmt.Printf("  Codex is using Azure model %s. Reopening Codex...\n\n", model)
 	launchCodexDesktopWith(app, path)
 }
 
@@ -548,10 +549,10 @@ func startProxyDetachedWithPID() (int, string, error) {
 	if err != nil {
 		return 0, "", err
 	}
-	if err := os.MkdirAll(accDir(), 0700); err != nil {
+	if err := os.MkdirAll(azureDir(), 0700); err != nil {
 		return 0, "", err
 	}
-	logFile, err := os.OpenFile(filepath.Join(accDir(), "proxy.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	logFile, err := os.OpenFile(filepath.Join(azureDir(), "proxy.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return 0, "", err
 	}
@@ -573,21 +574,21 @@ func startProxyDetachedWithPID() (int, string, error) {
 func detachedProxyCommand(proxy string, args ...string) *exec.Cmd {
 	cmd := exec.Command("nohup", append([]string{proxy}, args...)...)
 	cmd.Stdin = nil
-	// `acc codex` exits as soon as it reopens Desktop. A new session plus nohup
+	// `azure codex` exits as soon as it reopens Desktop. A new session plus nohup
 	// keeps the proxy alive after the launching terminal command is gone.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	return cmd
 }
 
 func proxyExecutable(commandPath string) string {
-	managed := filepath.Join(filepath.Dir(commandPath), "acc-proxy")
+	managed := filepath.Join(filepath.Dir(commandPath), "azure-proxy")
 	if info, err := os.Stat(managed); err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0111 != 0 {
 		return managed
 	}
 	return commandPath
 }
 
-// defaultConfigJSON is the config written by `acc setup`. Keeping it embedded
+// defaultConfigJSON is the config written by `azure setup`. Keeping it embedded
 // from config.json prevents setup and the live template from drifting apart.
 //
 //go:embed config.json

@@ -1,7 +1,7 @@
-# acc
+# azure
 
-[![CI](https://github.com/ATruePerson/acc/actions/workflows/ci.yml/badge.svg)](https://github.com/ATruePerson/acc/actions/workflows/ci.yml)
-[![Go Reference](https://pkg.go.dev/badge/github.com/ATruePerson/acc.svg)](https://pkg.go.dev/github.com/ATruePerson/acc)
+[![CI](https://github.com/ATruePerson/azure/actions/workflows/ci.yml/badge.svg)](https://github.com/ATruePerson/azure/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/ATruePerson/azure.svg)](https://pkg.go.dev/github.com/ATruePerson/azure)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 A local gateway for Claude Code and experimental Codex Desktop integration. It
@@ -15,124 +15,124 @@ OpenRouter, OpenCode, or another OpenAI-compatible provider.
 
 ```bash
 # Install the latest release. No Go toolchain needed.
-curl -fsSL https://raw.githubusercontent.com/ATruePerson/acc/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ATruePerson/azure/main/scripts/install.sh | sh
 
-# Save provider keys and create ~/.config/acc/config.json.
-acc setup
+# Save provider keys and create ~/.config/azure/config.json.
+azure setup
 
-# Start Claude Code through ACC.
-acc claude
+# Start Claude Code through Azure.
+azure claude
 
 # Or try the experimental Codex Desktop integration.
-acc codex
+azure codex
 ```
 
-`acc setup` stores keys in `~/.config/acc/.env` and creates a config file if
-one does not exist. `acc claude` starts the gateway when needed and launches
-Claude Code with the right connection. `acc codex` creates or preserves a
-durable raw and sanitized subscription baseline, switches it to ACC, and
+`azure setup` stores keys in `~/.config/azure/.env` and creates a config file if
+one does not exist. `azure claude` starts the gateway when needed and launches
+Claude Code with the right connection. `azure codex` creates or preserves a
+durable raw and sanitized subscription baseline, switches it to Azure, and
 reopens the existing ChatGPT desktop app.
 
 ## Commands
 
 | Command | What it does |
 | --- | --- |
-| `acc setup` | Save provider keys and create the first config file. |
-| `acc doctor` | Check whether configured provider keys work. |
-| `acc models` | List built-in model aliases and your config aliases. |
-| `acc bench` | Benchmark configured personas and fallbacks. |
-| `acc claude [args]` | Start ACC and launch Claude Code through it. |
-| `acc codex setup` | Back up Codex and point it directly at ACC. |
-| `acc codex start` | Start an owned ACC process and verify Responses readiness. |
-| `acc codex status` | Show safe config, catalog, process, and provider status. |
-| `acc codex doctor` | Run non-destructive direct-integration checks. |
-| `acc codex restore` | Restore the durable sanitized subscription baseline. |
-| `acc codex remove` | Remove active ACC/OpenCodex routing through the same sanitized restore path. |
-| `acc auth login/status/logout` | Manage native provider login without printing secrets. |
-| `acc mcp install` | Install ACC's safe bundled MCP config. |
-| `acc mcp doctor` | Check bundled MCP tools and config. |
-| `acc` | Run the gateway directly. |
-| `acc -tui` | Run the gateway with the terminal dashboard. |
-| `acc -ui` | Run the gateway and open the web dashboard. |
+| `azure setup` | Save provider keys and create the first config file. |
+| `azure doctor` | Check whether configured provider keys work. |
+| `azure models` | List built-in model aliases and your config aliases. |
+| `azure bench` | Benchmark configured personas and fallbacks. |
+| `azure claude [args]` | Start Azure and launch Claude Code through it. |
+| `azure codex setup` | Back up Codex and point it directly at Azure. |
+| `azure codex start` | Start an owned Azure process and verify Responses readiness. |
+| `azure codex status` | Show safe config, catalog, process, and provider status. |
+| `azure codex doctor` | Run non-destructive direct-integration checks. |
+| `azure codex restore` | Restore the durable sanitized subscription baseline. |
+| `azure codex remove` | Remove active Azure/OpenCodex routing through the same sanitized restore path. |
+| `azure auth login/status/logout` | Manage native provider login without printing secrets. |
+| `azure mcp install` | Install Azure's safe bundled MCP config. |
+| `azure mcp doctor` | Check bundled MCP tools and config. |
+| `azure` | Run the gateway directly. |
+| `azure -tui` | Run the gateway with the terminal dashboard. |
+| `azure -ui` | Run the gateway and open the web dashboard. |
 
 ### Bundled local tools
 
-ACC includes two safe-by-default local MCP servers for Claude Code:
+Azure includes two safe-by-default local MCP servers for Claude Code:
 
-- `acc-websearch`: keyless multi-source search plus guarded readable-page fetch.
-- `acc-mac-control`: Calendar, Reminders, notifications, and path-based Apple
+- `azure-websearch` (**Azure Web Search**): keyless multi-source search plus guarded readable-page fetch.
+- `azure-mac-control` (**Azure Mac Control**): Calendar, Reminders, notifications, and path-based Apple
   Notes tools. Notes can be addressed as `Stillness/Sleep`; IDs are optional
   when a folder path and exact title identify the note. `notes_recent` returns
   the newest 1, 3, or 7 notes from a specific folder.
 
-Obsidian is deliberately separate from ACC core. Its standalone Codex plugin,
+Obsidian is deliberately separate from Azure core. Its standalone Codex plugin,
 server, skills, and build instructions live in [`plugins/obsidian`](plugins/obsidian/README.md).
 
-`acc claude` creates `~/.config/acc/mcp.json` when missing and passes it through
+`azure claude` creates `~/.config/azure/mcp.json` when missing and passes it through
 Claude Code's `--mcp-config` option in strict mode. That keeps older global MCP
-servers from shadowing ACC's tools without rewriting Claude's global config.
+servers from shadowing Azure's tools without rewriting Claude's global config.
 Install or refresh it directly with:
 
 ```bash
-acc mcp install
-acc mcp doctor
+azure mcp install
+azure mcp doctor
 ```
 
-The separate Claude-3p desktop app reads its own config. Merge ACC into that
+The separate Claude-3p desktop app reads its own config. Merge Azure into that
 config, remove only the three legacy custom servers, and preserve unrelated
 servers and preferences with:
 
 ```bash
-acc mcp install --claude-3p
+azure mcp install --claude-3p
 ```
 
-Obsidian remains a separate plugin, but ACC can register its standalone,
+Obsidian remains a separate plugin, but Azure can register its standalone,
 vault-locked MCP server in Claude-3p when requested:
 
 ```bash
-acc mcp install --claude-3p --include-obsidian
+azure mcp install --claude-3p --include-obsidian
 ```
 
 This adds Claude's `obsidian` MCP entry without moving or copying the plugin.
 The plugin's skills and server stay together under `plugins/obsidian`.
 
-The unrestricted `acc-osascript` server is bundled but disabled by default.
+The unrestricted `azure-osascript` server is bundled but disabled by default.
 Enable it only when you need arbitrary AppleScript or JXA:
 
 ```bash
-acc mcp install --include-raw-osascript
+azure mcp install --include-raw-osascript
 # Claude-3p, including raw osascript:
-acc mcp install --claude-3p --include-raw-osascript
+azure mcp install --claude-3p --include-raw-osascript
 ```
 
 `web_fetch` accepts only public HTTP(S) destinations and rejects private/local
 network targets, error pages, oversized responses, unsupported binary content,
-redirect loops, and timeouts. Mac apps opened by `acc-mac-control` are closed
+redirect loops, and timeouts. Mac apps opened by `azure-mac-control` are closed
 after the call; apps already running before the call are left alone.
 
 ### Codex Desktop (experimental)
 
 This integration is a work in progress and can still break on app or protocol
-changes. Keep `acc codex restore` as the escape hatch back to the normal
+changes. Keep `azure codex restore` as the escape hatch back to the normal
 subscription connection.
 
-`acc codex setup` generates a deterministic catalog of real, provider-prefixed
+`azure codex setup` generates a deterministic catalog of real, provider-prefixed
 IDs such as `nvidia/z-ai/glm-5.2`, `opencode/big-pickle`, or an authenticated
-provider's discovered IDs. Codex connects directly to ACC's `/v1/responses`
+provider's discovered IDs. Codex connects directly to Azure's `/v1/responses`
 endpoint. The Codex catalog never advertises Claude aliases (`fable`, `opus`,
 `sonnet`, `haiku`); those remain available only to Claude Code.
 
 Choose one directly when scripting:
 
 ```bash
-acc codex setup --model nvidia/z-ai/glm-5.2
-acc codex start
+azure codex setup --model nvidia/z-ai/glm-5.2
+azure codex start
 ```
 
 The catalog contains only the efforts declared for each model. Unsupported
-choices are rejected before ACC contacts a provider. Model and effort arrive on
-every request, so separate Codex tasks stay independent. `acc codex restore`
-removes active ACC/OpenCodex routing and writes the durable sanitized
+choices are rejected before Azure contacts a provider. Model and effort arrive on
+every request, so separate Codex tasks stay independent. `azure codex restore`
+removes active Azure/OpenCodex routing and writes the durable sanitized
 subscription baseline while retaining the raw snapshot for recovery.
 
 Codex real-model IDs route to that exact provider and model. Each request goes
@@ -140,9 +140,9 @@ directly to the selected provider with no automatic fallback or rerouting.
 
 Codex's free-form custom tools are bridged through Chat Completions without
 changing their native Responses call or streaming shape. Provider-hosted tools
-such as web search are not ACC capabilities and return a clear backend-specific
+such as web search are not Azure capabilities and return a clear backend-specific
 error if Codex sends one. Codex 0.144.2 enables web search by default, so
-`acc codex` disables it only for the active ACC connection; `acc codex restore`
+`azure codex` disables it only for the active Azure connection; `azure codex restore`
 returns the previous subscription-safe setting.
 
 ### Native provider login
@@ -150,33 +150,33 @@ returns the previous subscription-safe setting.
 Kimi uses device authorization. xAI/Grok browser OAuth is experimental because
 an endorsed third-party flow could not be confirmed; `XAI_API_KEY` remains the
 stable alternative. Anthropic uses `ANTHROPIC_API_KEY` as the stable inference
-path. `--import-claude-code` makes an explicit, read-only ACC copy but is not
+path. `--import-claude-code` makes an explicit, read-only Azure copy but is not
 advertised for inference, and unsupported subscription impersonation is not
 implemented.
 
 ```bash
-acc auth login kimi
-acc auth login xai
-acc auth login anthropic
-acc auth status
+azure auth login kimi
+azure auth login xai
+azure auth login anthropic
+azure auth status
 ```
 
 OAuth credentials are stored in macOS Keychain. A private file store is used
-only when explicitly enabled with `ACC_AUTH_STORE=file` and an absolute
-`ACC_AUTH_FILE_DIR`. OpenCodex is no longer installed, started, configured, or
-required by ACC. Existing user-installed OpenCodex files are left untouched.
-`acc codex setup` safely migrates an active port-10100 connection while
+only when explicitly enabled with `AZURE_AUTH_STORE=file` and an absolute
+`AZURE_AUTH_FILE_DIR`. OpenCodex is no longer installed, started, configured, or
+required by Azure. Existing user-installed OpenCodex files are left untouched.
+`azure codex setup` safely migrates an active port-10100 connection while
 preserving unrelated Codex providers; it does not read or move OpenCodex auth.
 
 ## Configuration
 
-ACC reads `~/.config/acc/config.json` by default. Claude aliases (`fable`,
+Azure reads `~/.config/azure/config.json` by default. Claude aliases (`fable`,
 `opus`, `sonnet`, `haiku`) each point to one direct provider/model route with no
 automatic fallbacks. Provider errors return directly to the client — no silent
-model or provider switching. ACC hot-reloads the config file on every request;
+model or provider switching. Azure hot-reloads the config file on every request;
 no restart needed for config-only changes.
 
-Provider keys belong in `~/.config/acc/.env`, never in `config.json` or Git.
+Provider keys belong in `~/.config/azure/.env`, never in `config.json` or Git.
 You can name any provider in `providers` as long as it exposes an
 OpenAI-compatible `/chat/completions` endpoint.
 
@@ -233,7 +233,7 @@ Known provider and model behaviors to be aware of:
 
 ## Routing architecture
 
-ACC supports two routing paths:
+Azure supports two routing paths:
 
 **Claude aliases** (`anthropic/claude-fable`, `anthropic/claude-opus`,
 `anthropic/claude-sonnet`, `anthropic/claude-haiku`). Each alias maps to one
@@ -252,7 +252,7 @@ alias and family routing and uses the named provider directly.
 
 ## Identity
 
-ACC identifies itself as `I'm Kabir's Second Brain.` It does not inject
+Azure identifies itself as `I'm Kabir's Second Brain.` It does not inject
 provider-specific imitation prompts. The current provider and model are included
 in the prompt visible to the model so they can be disclosed only when the user
 explicitly asks. Codex and Claude Code each receive their own client-specific
@@ -260,13 +260,13 @@ adapter — neither receives the other's identity wrapper.
 
 ## Security
 
-ACC has no authentication and listens on loopback only (`127.0.0.1`). Do not
+Azure has no authentication and listens on loopback only (`127.0.0.1`). Do not
 change it to a LAN or internet-facing address. If another local process can
-reach that port, it can use your provider keys through ACC.
+reach that port, it can use your provider keys through Azure.
 
-- Keep `~/.config/acc/.env` private. `chmod 600 ~/.config/acc/.env` is a good
+- Keep `~/.config/azure/.env` private. `chmod 600 ~/.config/azure/.env` is a good
   default on a shared machine.
-- ACC does not provide TLS. Do not expose it to the internet.
+- Azure does not provide TLS. Do not expose it to the internet.
 - Prompts, tool data, and images leave your machine for the provider selected
   by the route.
 - The web endpoints allow cross-origin requests. That is useful for local tools,
@@ -275,7 +275,9 @@ reach that port, it can use your provider keys through ACC.
 ## From source
 
 ```bash
-go install github.com/ATruePerson/acc@latest
+go install github.com/ATruePerson/azure@latest
+# Note: Go module path is still github.com/ATruePerson/azure until the GitHub
+# repo is renamed; rename the installed binary: mv "$(go env GOPATH)/bin/acc" "$(go env GOPATH)/bin/azure"
 # Or in this repository:
 go run . -config config.json
 ```
@@ -286,14 +288,14 @@ If you start the gateway yourself, point Anthropic clients at it:
 export ANTHROPIC_BASE_URL=http://localhost:9999
 ```
 
-The `-env` flag loads a dotenv file, defaulting to `~/.config/acc/.env`.
+The `-env` flag loads a dotenv file, defaulting to `~/.config/azure/.env`.
 Existing environment variables win over values from that file.
 
 ## API
 
 | Endpoint | Purpose |
 | --- | --- |
-| `GET /health` | Health check. Returns `acc-proxy ok`. |
+| `GET /health` | Health check. Returns `azure-proxy ok`. |
 | `GET /v1/models` | Model discovery for Anthropic and OpenAI clients. |
 | `POST /v1/messages` | Anthropic Messages API. |
 | `POST /v1/responses` | OpenAI Responses API, used by Codex. |
@@ -308,7 +310,7 @@ make test
 
 ### Development
 
-ACC is maintained by Kabir and developed with assistance from OpenAI Codex.
+Azure is maintained by Kabir and developed with assistance from OpenAI Codex.
 
 ## License
 

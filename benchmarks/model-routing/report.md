@@ -1,4 +1,4 @@
-# ACC model-routing report
+# Azure model-routing report
 
 Generated: 2026-07-16
 
@@ -7,10 +7,10 @@ Profile: `combined`
 Reasoning policy: `maximum`
 Status: **provisional** because the selected primary and fallback are free endpoints.
 
-## 1-4. ACC repair
+## 1-4. Azure repair
 
 The regression had four independent causes: the source and runtime config still
-exposed the retired Sol/Terra/Luna catalog, the installed `acc` and `acc-proxy`
+exposed the retired Sol/Terra/Luna catalog, the installed `azure` and `azure-proxy`
 binaries were different builds, a stale proxy process continued serving old
 routes after installation, and the non-Codex `/v1/models` handler hard-coded
 five legacy names instead of reading the configured public aliases. Codex also
@@ -32,7 +32,7 @@ recorded in section 26.
 
 ## 5-11. Models, runs, reliability, and tools
 
-The curated comparison contains 201 real requests through ACC. Provider success
+The curated comparison contains 201 real requests through Azure. Provider success
 means the upstream completed a usable response. Correct means the result also
 passed the case evaluator. Tool success covers standard functions, the raw
 custom exec bridge, and the multi-step repository workflow. No successful tool
@@ -144,7 +144,7 @@ this report, and `recommended-routing.yaml`.
 
 Changed for this work: `config.json`, `types.go`, `model_registry.go`, `main.go`,
 `codex_app.go`, `cli.go`, `persona.go`, their related tests, and
-`README.md`. The ACC persona is now explicitly split into core behavior,
+`README.md`. The Azure persona is now explicitly split into core behavior,
 Claude Code runtime/tool-adapter rules, and Kabir's personal instructions.
 
 ## 26-28. Final verification, risks, and status
@@ -154,7 +154,7 @@ the root package and passed the benchmark runner package from cache. Catalog
 parsing, launcher and clean restore snapshot, three visible aliases with default
 `max`, live text and streaming, standard and custom tools, multi-turn
 continuation, exact effort headers, image routing, and clear image-plus-tool
-rejection also passed. ACC is left active on Opus with the gateway healthy.
+rejection also passed. Azure is left active on Opus with the gateway healthy.
 
 Remaining risks: both selected text routes are free and can be rate-limited or
 removed; HY3's 50K run was much slower than 20K/80K; the benchmark observed no

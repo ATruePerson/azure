@@ -76,7 +76,7 @@ func startOAuthCallbackServer(port int, path, expectedState string) (*oauthCallb
 		query := r.URL.Query()
 		state := query.Get("state")
 		if state != expectedState {
-			oauthCallbackPage(w, http.StatusBadRequest, "Login failed", "State mismatch. Return to ACC and try again.")
+			oauthCallbackPage(w, http.StatusBadRequest, "Login failed", "State mismatch. Return to Azure and try again.")
 			return
 		}
 		if providerError := query.Get("error"); providerError != "" {
@@ -96,7 +96,7 @@ func startOAuthCallbackServer(port int, path, expectedState string) (*oauthCallb
 		callback.once.Do(func() {
 			callback.result <- oauthCallbackResult{Code: code, State: state}
 		})
-		oauthCallbackPage(w, http.StatusOK, "Login complete", "You can close this tab and return to ACC.")
+		oauthCallbackPage(w, http.StatusOK, "Login complete", "You can close this tab and return to Azure.")
 	})
 	callback.server = &http.Server{
 		Handler:           mux,
@@ -139,7 +139,7 @@ func oauthCallbackPage(w http.ResponseWriter, status int, title, message string)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
-	_, _ = fmt.Fprintf(w, "<!doctype html><html><head><meta charset=utf-8><title>ACC</title></head><body><h2>%s</h2><p>%s</p></body></html>", html.EscapeString(title), html.EscapeString(message))
+	_, _ = fmt.Fprintf(w, "<!doctype html><html><head><meta charset=utf-8><title>Azure</title></head><body><h2>%s</h2><p>%s</p></body></html>", html.EscapeString(title), html.EscapeString(message))
 }
 
 type oauthCallbackInputKind int

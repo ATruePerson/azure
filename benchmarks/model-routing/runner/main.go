@@ -86,7 +86,7 @@ func main() {
 	caseFilter := flag.String("cases", "", "comma-separated case IDs")
 	runsOverride := flag.Int("runs", 0, "override repetitions per selected case")
 	mergeFiles := flag.String("merge-files", "", "comma-separated prior results.json files to merge without new requests")
-	base := flag.String("base-url", "http://127.0.0.1:9999/v1", "ACC API base")
+	base := flag.String("base-url", "http://127.0.0.1:9999/v1", "Azure API base")
 	timeout := flag.Duration("timeout", 90*time.Second, "per-request timeout")
 	flag.Parse()
 
@@ -469,12 +469,12 @@ func fillHeaders(result *RunResult, h http.Header) {
 	if h == nil {
 		return
 	}
-	result.RequestedModel = h.Get("X-ACC-Requested-Model")
-	result.RequestedEffort = h.Get("X-ACC-Requested-Effort")
-	result.ActualProvider = h.Get("X-ACC-Backend-Provider")
-	result.ActualModel = h.Get("X-ACC-Backend-Model")
-	result.ActualEffort = h.Get("X-ACC-Backend-Effort")
-	result.Fallback = strings.EqualFold(h.Get("X-ACC-Fallback"), "true")
+	result.RequestedModel = h.Get("X-Azure-Requested-Model")
+	result.RequestedEffort = h.Get("X-Azure-Requested-Effort")
+	result.ActualProvider = h.Get("X-Azure-Backend-Provider")
+	result.ActualModel = h.Get("X-Azure-Backend-Model")
+	result.ActualEffort = h.Get("X-Azure-Backend-Effort")
+	result.Fallback = strings.EqualFold(h.Get("X-Azure-Fallback"), "true")
 }
 
 func classify(status int, message string) string {
@@ -581,7 +581,7 @@ func findRoot() (string, error) {
 			return root, nil
 		}
 	}
-	return "", fmt.Errorf("run from the ACC repository root or benchmarks/model-routing")
+	return "", fmt.Errorf("run from the Azure repository root or benchmarks/model-routing")
 }
 
 func loadJSON[T any](path string) T {
@@ -666,7 +666,7 @@ func writeSummary(root, profile string, results []RunResult) {
 	b, _ := json.MarshalIndent(doc, "", "  ")
 	must(os.WriteFile(filepath.Join(root, "results.json"), append(b, '\n'), 0644))
 	var md strings.Builder
-	md.WriteString("# ACC model-routing report\n\n")
+	md.WriteString("# Azure model-routing report\n\n")
 	fmt.Fprintf(&md, "Generated: %s  \nProfile: `%s`  \nReasoning: `maximum`\n\n", time.Now().Format(time.RFC3339), profile)
 	md.WriteString("| Model | Runs | Provider success | Correct | Tool success | Avg latency | Avg TTFT |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: |\n")
 	for _, s := range summaries {
