@@ -11,8 +11,7 @@ import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/rela
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
-import * as DesktopAppIdentity from "./DesktopAppIdentity.ts";
-import * as DesktopEnvironment from "./DesktopEnvironment.ts";
+import * as DesktopPreReadyPlatform from "./DesktopPreReadyPlatform.ts";
 
 declare const __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: string | undefined;
 
@@ -84,25 +83,15 @@ export function createDesktopClerkBridge(stateDir: string, isDevelopment: boolea
 }
 
 export const make = Effect.gen(function* () {
-  const environment = yield* DesktopEnvironment.DesktopEnvironment;
-  const electronApp = yield* ElectronApp.ElectronApp;
-
-  // Electron scopes the single-instance lock to the userData directory and
-  // creates that directory when the lock is acquired. The SDK bridge takes
-  // the lock at creation, so userData must already point at the real
-  // directory here — under the default productName-derived path, acquiring
-  // the lock would create a new Azure directory before legacy-install
-  // detection in resolveUserDataPath can select existing T3 data.
-  const userDataPath = yield* DesktopAppIdentity.resolveUserDataPath;
-  yield* electronApp.setPath("userData", userDataPath);
+  const preReady = yield* DesktopPreReadyPlatform.DesktopPreReadyElectronOptions;
 
   const bridge = yield* Effect.acquireRelease(
     Effect.try({
-      try: () => createDesktopClerkBridge(environment.stateDir, environment.isDevelopment),
+      try: () => createDesktopClerkBridge(preReady.stateDir, preReady.isDevelopment),
       catch: (cause) =>
         new DesktopClerkBridgeInitializationError({
-          stateDir: environment.stateDir,
-          isDevelopment: environment.isDevelopment,
+          stateDir: preReady.stateDir,
+          isDevelopment: preReady.isDevelopment,
           cause,
         }),
     }),
@@ -111,8 +100,8 @@ export const make = Effect.gen(function* () {
         try: () => bridge.cleanup(),
         catch: (cause) =>
           new DesktopClerkBridgeCleanupError({
-            stateDir: environment.stateDir,
-            isDevelopment: environment.isDevelopment,
+            stateDir: preReady.stateDir,
+            isDevelopment: preReady.isDevelopment,
             cause,
           }),
       }).pipe(Effect.orDie),

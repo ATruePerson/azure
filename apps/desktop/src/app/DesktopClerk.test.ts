@@ -23,37 +23,22 @@ vi.mock("@clerk/electron/storage", () => ({
 }));
 
 import * as Exit from "effect/Exit";
-import * as FileSystem from "effect/FileSystem";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopClerk from "./DesktopClerk.ts";
-import * as DesktopEnvironment from "./DesktopEnvironment.ts";
+import * as DesktopPreReadyPlatform from "./DesktopPreReadyPlatform.ts";
 
-const makeDesktopClerkLayer = (isDevelopment = true, events: string[] = []) => {
-  const environment = DesktopEnvironment.DesktopEnvironment.of({
+const makeDesktopClerkLayer = (isDevelopment = true) => {
+  const preReady = DesktopPreReadyPlatform.DesktopPreReadyElectronOptions.of({
     stateDir: "/tmp/t3-state",
     isDevelopment,
-    appDataDirectory: "/tmp/app-data",
-    userDataDirName: isDevelopment ? "azure-code-dev" : "azure-code",
-    legacyUserDataDirName: isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)",
-    path: { join: (...parts: ReadonlyArray<string>) => parts.join("/") },
-  } as unknown as DesktopEnvironment.DesktopEnvironment["Service"]);
-
-  const electronApp = {
-    setPath: (name: string, value: string) =>
-      Effect.sync(() => {
-        events.push(`setPath:${name}:${value}`);
-      }),
-  } as unknown as ElectronApp.ElectronApp["Service"];
+    userDataPath: "/tmp/app-data/azure-code",
+    linux: null,
+    linuxPasswordStoreCommandLine: null,
+  });
 
   return DesktopClerk.layer.pipe(
-    Layer.provide(
-      Layer.mergeAll(
-        Layer.succeed(DesktopEnvironment.DesktopEnvironment, environment),
-        Layer.succeed(ElectronApp.ElectronApp, electronApp),
-        FileSystem.layerNoop({ exists: () => Effect.succeed(false) }),
-      ),
-    ),
+    Layer.provide(Layer.succeed(DesktopPreReadyPlatform.DesktopPreReadyElectronOptions, preReady)),
   );
 };
 
@@ -84,7 +69,7 @@ describe("DesktopClerk", () => {
     });
 
     return Effect.gen(function* () {
-      yield* Effect.scoped(Layer.build(makeDesktopClerkLayer(true, events)));
+      yield* Effect.scoped(Layer.build(makeDesktopClerkLayer(true)));
 
       assert.deepEqual(createClerkBridgeMock.mock.calls, [
         [
@@ -96,13 +81,7 @@ describe("DesktopClerk", () => {
         ],
       ]);
       assert.equal(cleanup.mock.calls.length, 1);
-      // The bridge acquires Electron's single-instance lock at creation, and
-      // the lock both lives in and creates the userData directory — so the
-      // real path must be set before the bridge exists.
-      assert.deepEqual(events, [
-        "setPath:userData:/tmp/app-data/azure-code-dev",
-        "createClerkBridge",
-      ]);
+      assert.deepEqual(events, ["createClerkBridge"]);
       storageMock.mockClear();
       createClerkBridgeMock.mockClear();
     });

@@ -5,14 +5,14 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { beforeEach, vi } from "vite-plus/test";
 
-const { appendSwitchMock, getSwitchValueMock, hasSwitchMock, registerSchemesMock } = vi.hoisted(
-  () => ({
+const { appendSwitchMock, getSwitchValueMock, hasSwitchMock, registerSchemesMock, setPathMock } =
+  vi.hoisted(() => ({
     appendSwitchMock: vi.fn(),
     getSwitchValueMock: vi.fn(),
     hasSwitchMock: vi.fn(),
     registerSchemesMock: vi.fn(),
-  }),
-);
+    setPathMock: vi.fn(),
+  }));
 
 vi.mock("electron", () => ({
   app: {
@@ -21,6 +21,7 @@ vi.mock("electron", () => ({
       getSwitchValue: getSwitchValueMock,
       hasSwitch: hasSwitchMock,
     },
+    setPath: setPathMock,
   },
   protocol: {
     registerSchemesAsPrivileged: registerSchemesMock,
@@ -35,6 +36,7 @@ describe("DesktopPreReadyPlatform", () => {
     getSwitchValueMock.mockReset();
     hasSwitchMock.mockReset();
     registerSchemesMock.mockReset();
+    setPathMock.mockReset();
   });
 
   it("reads an explicit Electron command-line switch value", () => {
@@ -78,6 +80,28 @@ describe("DesktopPreReadyPlatform", () => {
     assert.isNull(value);
   });
 
+  it("resolves the legacy production state and user-data paths before startup", () => {
+    const existingPaths = new Set([
+      "/Users/test/.t3",
+      "/Users/test/Library/Application Support/T3 Code (Alpha)",
+    ]);
+
+    assert.deepEqual(
+      DesktopPreReadyPlatform.resolveDesktopPreReadyPaths({
+        env: {},
+        homeDirectory: "/Users/test",
+        platform: "darwin",
+        joinPath: (first, ...segments) => [first, ...segments].join("/"),
+        pathExists: (path) => existingPaths.has(path),
+      }),
+      {
+        stateDir: "/Users/test/.t3/userdata",
+        isDevelopment: false,
+        userDataPath: "/Users/test/Library/Application Support/T3 Code (Alpha)",
+      },
+    );
+  });
+
   it.effect(
     "acquires a synchronous pre-ready layer before an asynchronous Clerk-shaped layer",
     () =>
@@ -89,6 +113,9 @@ describe("DesktopPreReadyPlatform", () => {
         const events: Array<string> = [];
         registerSchemesMock.mockImplementation(() => {
           events.push("pre-ready");
+        });
+        setPathMock.mockImplementation(() => {
+          events.push("user-data");
         });
 
         const preReadyLayer = DesktopPreReadyPlatform.layer.pipe(
@@ -115,15 +142,15 @@ describe("DesktopPreReadyPlatform", () => {
           preReady: DesktopPreReadyPlatform.DesktopPreReadyElectronOptions,
         }).pipe(Effect.provide(runtimeLayer));
 
-        assert.deepEqual(result, {
-          clerk: { ready: true },
-          preReady: {
-            linux: null,
-            linuxPasswordStoreCommandLine: null,
-          },
-        });
-        assert.deepEqual(events, ["pre-ready", "clerk"]);
+        assert.deepEqual(result.clerk, { ready: true });
+        assert.equal(result.preReady.linux, null);
+        assert.equal(result.preReady.linuxPasswordStoreCommandLine, null);
+        assert.equal(result.preReady.isDevelopment, false);
+        assert.isNotEmpty(result.preReady.stateDir);
+        assert.isNotEmpty(result.preReady.userDataPath);
+        assert.deepEqual(events, ["pre-ready", "user-data", "clerk"]);
         assert.equal(registerSchemesMock.mock.calls.length, 1);
+        assert.equal(setPathMock.mock.calls.length, 1);
         assert.equal(appendSwitchMock.mock.calls.length, 0);
       }),
   );

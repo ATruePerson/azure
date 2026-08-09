@@ -5,11 +5,18 @@ import * as NodePath from "node:path";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 
 import * as Electron from "electron";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 
 import * as DesktopEarlyElectronStartup from "./DesktopEarlyElectronStartup.ts";
+import {
+  LEGACY_DESKTOP_BASE_DIR_NAME,
+  resolveDesktopBaseDir,
+  resolveDesktopStateDir,
+  type JoinPath,
+} from "./DesktopStatePaths.ts";
 import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
 
 export interface DesktopPreReadyCommandLineReader {
@@ -44,12 +51,66 @@ export class DesktopPreReadyElectronOptions extends Context.Service<
   {
     readonly linux: DesktopEarlyElectronStartup.EarlyLinuxElectronOptions | null;
     readonly linuxPasswordStoreCommandLine: string | null;
+    readonly stateDir: string;
+    readonly isDevelopment: boolean;
+    readonly userDataPath: string;
   }
 >()("@t3tools/desktop/app/DesktopPreReadyPlatform/DesktopPreReadyElectronOptions") {}
+
+interface DesktopPreReadyPathsInput {
+  readonly env: NodeJS.ProcessEnv;
+  readonly homeDirectory: string;
+  readonly platform: NodeJS.Platform;
+  readonly joinPath: JoinPath;
+  readonly pathExists: (path: string) => boolean;
+}
+
+export function resolveDesktopPreReadyPaths(input: DesktopPreReadyPathsInput) {
+  const isDevelopment = (input.env.VITE_DEV_SERVER_URL?.trim().length ?? 0) > 0;
+  const t3Home = Option.fromUndefinedOr(input.env.T3CODE_HOME);
+  const baseDir = resolveDesktopBaseDir({
+    homeDirectory: input.homeDirectory,
+    joinPath: input.joinPath,
+    t3Home,
+    legacyBaseDirExists: input.pathExists(
+      input.joinPath(input.homeDirectory, LEGACY_DESKTOP_BASE_DIR_NAME),
+    ),
+  });
+  const appDataDirectory =
+    input.platform === "win32"
+      ? input.env.APPDATA?.trim() || input.joinPath(input.homeDirectory, "AppData", "Roaming")
+      : input.platform === "darwin"
+        ? input.joinPath(input.homeDirectory, "Library", "Application Support")
+        : input.env.XDG_CONFIG_HOME?.trim() || input.joinPath(input.homeDirectory, ".config");
+  const legacyUserDataPath = input.joinPath(
+    appDataDirectory,
+    isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)",
+  );
+
+  return {
+    stateDir: resolveDesktopStateDir({
+      baseDir,
+      isDevelopment,
+      joinPath: input.joinPath,
+      t3Home,
+    }),
+    isDevelopment,
+    userDataPath: input.pathExists(legacyUserDataPath)
+      ? legacyUserDataPath
+      : input.joinPath(appDataDirectory, isDevelopment ? "azure-code-dev" : "azure-code"),
+  };
+}
 
 export const make = Effect.gen(function* () {
   const platform = yield* HostProcessPlatform;
   return yield* Effect.sync((): DesktopPreReadyElectronOptions["Service"] => {
+    const paths = resolveDesktopPreReadyPaths({
+      env: process.env,
+      homeDirectory: NodeOS.homedir(),
+      platform,
+      joinPath: NodePath.join,
+      pathExists: NodeFS.existsSync,
+    });
     const linuxPasswordStoreCommandLine =
       platform === "linux"
         ? readCommandLineSwitchValue(Electron.app.commandLine, "password-store")
@@ -62,8 +123,9 @@ export const make = Effect.gen(function* () {
         Electron.app.commandLine.appendSwitch("password-store", linux.passwordStore);
       }
     }
+    Electron.app.setPath("userData", paths.userDataPath);
 
-    return { linux, linuxPasswordStoreCommandLine };
+    return { linux, linuxPasswordStoreCommandLine, ...paths };
   });
 }).pipe(Effect.withSpan("desktop.electron.configureBeforeReady"));
 
