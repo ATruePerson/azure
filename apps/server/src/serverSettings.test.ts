@@ -691,4 +691,48 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       );
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
+
+  it.effect("rejects NVIDIA and OpenRouter keys that are not marked sensitive", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const error = yield* Effect.flip(
+        serverSettings.updateSettings({
+          providerInstances: {
+            [ProviderInstanceId.make("openrouter")]: {
+              driver: ProviderDriverKind.make("openrouter"),
+              environment: [
+                { name: "OPENROUTER_API_KEY", value: "router-secret", sensitive: false },
+              ],
+              config: {},
+            },
+          },
+        }),
+      );
+      assert.equal(error.operation, "normalize");
+      assert.equal(error.environmentVariable, "OPENROUTER_API_KEY");
+      assert.notInclude(String(error), "router-secret");
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect(
+    "does not switch text generation to another provider when the selection is unavailable",
+    () =>
+      Effect.gen(function* () {
+        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+        const next = yield* serverSettings.updateSettings({
+          providers: {
+            codex: { enabled: false },
+            openrouter: { enabled: true },
+          },
+        });
+        assert.equal(
+          next.textGenerationModelSelection.instanceId,
+          ProviderInstanceId.make("codex"),
+        );
+        assert.equal(
+          next.textGenerationModelSelection.model,
+          DEFAULT_SERVER_SETTINGS.textGenerationModelSelection.model,
+        );
+      }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
 });

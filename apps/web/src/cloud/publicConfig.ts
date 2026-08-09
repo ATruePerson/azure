@@ -9,7 +9,7 @@ export class CloudPublicConfigMissingError extends Schema.TaggedErrorClass<Cloud
   },
 ) {
   override get message(): string {
-    return `${this.key} is not configured.`;
+    return "Cloud authentication configuration is incomplete.";
   }
 }
 

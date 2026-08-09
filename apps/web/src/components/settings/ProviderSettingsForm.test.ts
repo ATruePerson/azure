@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import { ProviderDriverKind } from "@t3tools/contracts";
 
-import { DRIVER_OPTION_BY_VALUE } from "./providerDriverMeta";
+import { DRIVER_OPTION_BY_VALUE, PROVIDER_CLIENT_DEFINITIONS } from "./providerDriverMeta";
 import {
   deriveProviderSettingsFields,
   nextProviderConfigWithFieldValue,
@@ -10,6 +10,19 @@ import {
 } from "./ProviderSettingsForm";
 
 describe("ProviderSettingsForm helpers", () => {
+  it("lists NVIDIA and OpenRouter with their provider icons", () => {
+    expect(PROVIDER_CLIENT_DEFINITIONS.map((definition) => definition.label)).toContain("NVIDIA");
+    expect(PROVIDER_CLIENT_DEFINITIONS.map((definition) => definition.label)).toContain(
+      "OpenRouter",
+    );
+    expect(
+      PROVIDER_CLIENT_DEFINITIONS.find((definition) => definition.label === "NVIDIA")?.icon,
+    ).toBeDefined();
+    expect(
+      PROVIDER_CLIENT_DEFINITIONS.find((definition) => definition.label === "OpenRouter")?.icon,
+    ).toBeDefined();
+  });
+
   it("derives visible provider config fields from the client definition schema", () => {
     const codex = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("codex")];
 
@@ -35,6 +48,20 @@ describe("ProviderSettingsForm helpers", () => {
       description: "Stored in plain text on disk.",
       control: "password",
     });
+  });
+
+  it.each([
+    ["nvidiaNim", "https://integrate.api.nvidia.com/v1"],
+    ["openrouter", "https://openrouter.ai/api/v1"],
+  ] as const)("exposes the %s base URL control", (driver, defaultBaseUrl) => {
+    const definition = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make(driver)];
+    expect(definition).toBeDefined();
+    expect(deriveProviderSettingsFields(definition!).map((field) => field.key)).toEqual([
+      "baseUrl",
+    ]);
+    expect(
+      deriveProviderSettingsFields(definition!).find((field) => field.key === "baseUrl"),
+    ).toMatchObject({ label: "Base URL", placeholder: defaultBaseUrl });
   });
 
   it("preserves unknown config keys while omitting empty configurable fields", () => {

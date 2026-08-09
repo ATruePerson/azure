@@ -227,4 +227,29 @@ describe("buildProviderInstanceUpdatePatch", () => {
     expect(patch.providerInstances?.[instanceId]).toEqual(nextInstance);
     expect(patch.providers).toBeUndefined();
   });
+
+  it("persists a disabled OpenRouter instance through the provider-instance map", () => {
+    const instanceId = ProviderInstanceId.make("openrouter");
+    const driver = ProviderDriverKind.make("openrouter");
+    const nextInstance = {
+      driver,
+      enabled: false,
+      environment: [
+        { name: "OPENROUTER_API_KEY", value: "", sensitive: true, valueRedacted: true },
+      ],
+      config: { baseUrl: "https://openrouter.ai/api/v1" },
+    } satisfies ProviderInstanceConfig;
+
+    const patch = buildProviderInstanceUpdatePatch({
+      settings: DEFAULT_SERVER_SETTINGS,
+      instanceId,
+      instance: nextInstance,
+      driver,
+      isDefault: true,
+    });
+
+    expect(patch.providerInstances?.[instanceId]).toEqual(nextInstance);
+    expect(patch.providers?.openrouter).toEqual(DEFAULT_SERVER_SETTINGS.providers.openrouter);
+    expect(JSON.stringify(patch)).not.toContain("OPENROUTER_SECRET");
+  });
 });

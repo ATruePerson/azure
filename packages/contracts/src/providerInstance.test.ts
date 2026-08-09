@@ -7,6 +7,7 @@ import {
   ProviderInstanceConfigMap,
   ProviderInstanceId,
   ProviderInstanceRef,
+  PROVIDER_API_KEY_ENVIRONMENT_BY_DRIVER,
 } from "./providerInstance.ts";
 
 const decodeProviderDriverKind = Schema.decodeUnknownSync(ProviderDriverKind);
@@ -86,6 +87,15 @@ describe("ProviderInstanceRef", () => {
 });
 
 describe("ProviderInstanceConfig", () => {
+  it("maps first-party provider credentials to sensitive environment names", () => {
+    expect(PROVIDER_API_KEY_ENVIRONMENT_BY_DRIVER[ProviderDriverKind.make("nvidiaNim")]).toBe(
+      "NVIDIA_API_KEY",
+    );
+    expect(PROVIDER_API_KEY_ENVIRONMENT_BY_DRIVER[ProviderDriverKind.make("openrouter")]).toBe(
+      "OPENROUTER_API_KEY",
+    );
+  });
+
   it("accepts a minimal config envelope for a driver", () => {
     const decoded = decodeProviderInstanceConfig({ driver: "codex" });
     expect(decoded.driver).toBe("codex");

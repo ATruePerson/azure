@@ -55,6 +55,39 @@ function settingsWithProviderInstances(): UnifiedSettings {
 }
 
 describe("instance-scoped model selection", () => {
+  it("keeps dynamically discovered OpenRouter model ids selectable", () => {
+    const driver = ProviderDriverKind.make("openrouter");
+    const providers = [
+      provider({
+        provider: driver,
+        instanceId: "openrouter",
+        models: ["meta-llama/llama-4-maverick"],
+      }),
+    ];
+    const entry = deriveProviderInstanceEntries(providers)[0]!;
+
+    expect(
+      getAppModelOptionsForInstance(
+        {
+          ...DEFAULT_UNIFIED_SETTINGS,
+          providerInstances: { [ProviderInstanceId.make("openrouter")]: { driver } },
+        },
+        entry,
+      ).map((option) => option.slug),
+    ).toEqual(["meta-llama/llama-4-maverick"]);
+    expect(
+      resolveAppModelSelectionForInstance(
+        ProviderInstanceId.make("openrouter"),
+        {
+          ...DEFAULT_UNIFIED_SETTINGS,
+          providerInstances: { [ProviderInstanceId.make("openrouter")]: { driver } },
+        },
+        providers,
+        "meta-llama/llama-4-maverick",
+      ),
+    ).toBe("meta-llama/llama-4-maverick");
+  });
+
   it("preserves server-provided legacy model metadata", () => {
     const baseProvider = provider({
       instanceId: "claudeAgent",

@@ -51,6 +51,8 @@ describe("DesktopEnvironment", () => {
       );
 
       assert.equal(environment.isDevelopment, true);
+      assert.equal(environment.branding.baseName, "Azure Code");
+      assert.equal(environment.displayName, "Azure Code");
       assert.equal(environment.appDataDirectory, "/Users/alice/Library/Application Support");
       assert.equal(environment.baseDir, "/tmp/t3");
       assert.equal(environment.stateDir, "/tmp/t3/userdata");
@@ -67,8 +69,11 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.appRoot, "/repo");
       assert.equal(environment.backendEntryPath, "/repo/apps/server/dist/bin.mjs");
       assert.equal(environment.backendCwd, "/repo");
-      assert.equal(environment.appUserModelId, "com.t3tools.t3code.dev");
-      assert.equal(environment.linuxWmClass, "t3code-dev");
+      assert.equal(environment.appUserModelId, "com.atrueperson.azurecode.dev");
+      assert.equal(environment.linuxDesktopEntryName, "azure-code-dev.desktop");
+      assert.equal(environment.linuxWmClass, "azure-code-dev");
+      assert.equal(environment.userDataDirName, "azure-code-dev");
+      assert.equal(environment.legacyUserDataDirName, "T3 Code (Dev)");
       assert.deepEqual(
         Option.map(environment.devServerUrl, (url) => url.href),
         Option.some("http://localhost:5173/"),
@@ -92,6 +97,8 @@ describe("DesktopEnvironment", () => {
 
       assert.equal(environment.isDevelopment, false);
       assert.equal(environment.stateDir, "/tmp/t3/userdata");
+      assert.equal(environment.userDataDirName, "azure-code");
+      assert.equal(environment.legacyUserDataDirName, "T3 Code (Alpha)");
       assert.equal(environment.logDir, "/tmp/t3/userdata/logs");
       assert.equal(environment.browserArtifactsDir, "/tmp/t3/userdata/browser-artifacts");
       assert.equal(environment.serverSettingsPath, "/tmp/t3/userdata/settings.json");
@@ -106,8 +113,15 @@ describe("DesktopEnvironment", () => {
       );
       const production = yield* makeEnvironment();
 
-      assert.equal(development.stateDir, "/Users/alice/.t3/dev");
-      assert.equal(production.stateDir, "/Users/alice/.t3/userdata");
+      assert.equal(development.baseDir, "/Users/alice/.azure-code");
+      assert.equal(development.stateDir, "/Users/alice/.azure-code/dev");
+      assert.equal(production.baseDir, "/Users/alice/.azure-code");
+      assert.equal(production.stateDir, "/Users/alice/.azure-code/userdata");
+      assert.equal(production.appUserModelId, "com.atrueperson.azurecode");
+      assert.equal(production.linuxDesktopEntryName, "azure-code.desktop");
+      assert.equal(production.linuxWmClass, "azure-code");
+      assert.equal(production.userDataDirName, "azure-code");
+      assert.equal(production.legacyUserDataDirName, "T3 Code (Alpha)");
     }),
   );
 

@@ -70,6 +70,11 @@ const slugSchema = TrimmedNonEmptyString.check(
 export const ProviderDriverKind = slugSchema.pipe(Schema.brand("ProviderDriverKind"));
 export type ProviderDriverKind = typeof ProviderDriverKind.Type;
 
+export const PROVIDER_API_KEY_ENVIRONMENT_BY_DRIVER: Partial<Record<ProviderDriverKind, string>> = {
+  [ProviderDriverKind.make("nvidiaNim")]: "NVIDIA_API_KEY",
+  [ProviderDriverKind.make("openrouter")]: "OPENROUTER_API_KEY",
+};
+
 const isProviderDriverKindValue = Schema.is(ProviderDriverKind);
 export const isProviderDriverKind = (value: unknown): value is ProviderDriverKind =>
   isProviderDriverKindValue(value);

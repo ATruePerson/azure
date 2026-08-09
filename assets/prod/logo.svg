@@ -1,4 +1,48 @@
-<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M0 10C0 4.47715 4.47715 0 10 0H118C123.523 0 128 4.47715 128 10V118C128 123.523 123.523 128 118 128H10C4.47715 128 0 123.523 0 118V10Z" fill="black"/>
-<path d="M33.4509 93V47.56H15.5309V37H64.3309V47.56H46.4109V93H33.4509ZM86.7253 93.96C82.832 93.96 78.9653 93.4533 75.1253 92.44C71.2853 91.3733 68.032 89.88 65.3653 87.96L70.4053 78.04C72.5386 79.5867 75.0186 80.8133 77.8453 81.72C80.672 82.6267 83.5253 83.08 86.4053 83.08C89.6586 83.08 92.2186 82.44 94.0853 81.16C95.952 79.88 96.8853 78.12 96.8853 75.88C96.8853 73.7467 96.0586 72.0667 94.4053 70.84C92.752 69.6133 90.0853 69 86.4053 69H80.4853V60.44L96.0853 42.76L97.5253 47.4H68.1653V37H107.365V45.4L91.8453 63.08L85.2853 59.32H89.0453C95.9253 59.32 101.125 60.8667 104.645 63.96C108.165 67.0533 109.925 71.0267 109.925 75.88C109.925 79.0267 109.099 81.9867 107.445 84.76C105.792 87.48 103.259 89.6933 99.8453 91.4C96.432 93.1067 92.0586 93.96 86.7253 93.96Z" fill="white"/>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="azure" x1="165" y1="125" x2="860" y2="915" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#07152F"/>
+      <stop offset="0.5" stop-color="#0A4BD6"/>
+      <stop offset="1" stop-color="#082A82"/>
+    </linearGradient>
+    <radialGradient id="cyanGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(770 240) rotate(137) scale(520)">
+      <stop stop-color="#58E2FF" stop-opacity="0.62"/>
+      <stop offset="1" stop-color="#58E2FF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="violetGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(238 820) rotate(-45) scale(450)">
+      <stop stop-color="#6967FF" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#6967FF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="mark" x1="332" y1="272" x2="716" y2="760" gradientUnits="userSpaceOnUse">
+      <stop stop-color="white"/>
+      <stop offset="0.55" stop-color="#DFF8FF"/>
+      <stop offset="1" stop-color="#8BE9FF"/>
+    </linearGradient>
+    <linearGradient id="crossbar" x1="408" y1="582" x2="616" y2="582" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5BE7FF"/>
+      <stop offset="1" stop-color="#E5FBFF"/>
+    </linearGradient>
+    <filter id="shadow" x="40" y="45" width="944" height="970" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="20" stdDeviation="24" flood-color="#071A48" flood-opacity="0.38"/>
+    </filter>
+    <filter id="markShadow" x="230" y="200" width="564" height="620" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#001B59" flood-opacity="0.42"/>
+    </filter>
+    <clipPath id="body">
+      <rect x="100" y="100" width="824" height="824" rx="188"/>
+    </clipPath>
+  </defs>
+  <g filter="url(#shadow)">
+    <g clip-path="url(#body)">
+      <rect x="100" y="100" width="824" height="824" rx="188" fill="url(#azure)"/>
+      <rect x="100" y="100" width="824" height="824" fill="url(#cyanGlow)"/>
+      <rect x="100" y="100" width="824" height="824" fill="url(#violetGlow)"/>
+      <g filter="url(#markShadow)">
+        <path d="M306 748L512 278L718 748" stroke="url(#mark)" stroke-width="88" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M408 582H616" stroke="url(#crossbar)" stroke-width="70" stroke-linecap="round"/>
+      </g>
+      <path d="M326 725L512 301L698 725" stroke="white" stroke-opacity="0.14" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="116" y="116" width="792" height="792" rx="172" stroke="white" stroke-opacity="0.16" stroke-width="4"/>
+    </g>
+  </g>
 </svg>

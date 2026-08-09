@@ -81,12 +81,25 @@ describe("DesktopEarlyElectronStartup", () => {
     });
 
     assert.deepEqual(options, {
-      linuxWmClass: "t3code-dev",
+      linuxWmClass: "azure-code-dev",
       passwordStore: "gnome-libsecret",
     });
   });
 
-  it("keeps implicit development state under ~/.t3/dev when T3CODE_HOME is unset", () => {
+  it("resolves the production linux WM class", () => {
+    const options = resolveEarlyLinuxElectronOptions({
+      env: {
+        T3CODE_HOME: "/home/user/.t3-test",
+      },
+      homeDirectory: "/home/user",
+      joinPath,
+      readFileString: () => JSON.stringify({ linuxPasswordStore: "auto" }),
+    });
+
+    assert.equal(options.linuxWmClass, "azure-code");
+  });
+
+  it("keeps implicit development state under ~/.azure-code/dev when T3CODE_HOME is unset", () => {
     const preference = resolveEarlyLinuxPasswordStorePreference({
       env: {
         VITE_DEV_SERVER_URL: "http://127.0.0.1:5173",
@@ -94,13 +107,47 @@ describe("DesktopEarlyElectronStartup", () => {
       homeDirectory: "/home/user",
       joinPath,
       readFileString: (path) => {
-        assert.equal(path, "/home/user/.t3/dev/desktop-settings.json");
+        assert.equal(path, "/home/user/.azure-code/dev/desktop-settings.json");
         return JSON.stringify({ linuxPasswordStore: "kwallet" });
       },
     });
 
     assert.equal(preference, "kwallet");
   });
+
+  it.each([
+    {
+      name: "old-only",
+      existingPaths: new Set(["/home/user/.t3"]),
+      expectedPath: "/home/user/.t3/dev/desktop-settings.json",
+    },
+    {
+      name: "new-only",
+      existingPaths: new Set(["/home/user/.azure-code"]),
+      expectedPath: "/home/user/.azure-code/dev/desktop-settings.json",
+    },
+    {
+      name: "both-present",
+      existingPaths: new Set(["/home/user/.t3", "/home/user/.azure-code"]),
+      expectedPath: "/home/user/.t3/dev/desktop-settings.json",
+    },
+  ])(
+    "selects the $name implicit state path deterministically",
+    ({ existingPaths, expectedPath }) => {
+      const preference = resolveEarlyLinuxPasswordStorePreference({
+        env: { VITE_DEV_SERVER_URL: "http://127.0.0.1:5173" },
+        homeDirectory: "/home/user",
+        joinPath,
+        pathExists: (path) => existingPaths.has(path),
+        readFileString: (path) => {
+          assert.equal(path, expectedPath);
+          return JSON.stringify({ linuxPasswordStore: "kwallet" });
+        },
+      });
+
+      assert.equal(preference, "kwallet");
+    },
+  );
 
   it("treats whitespace-only T3CODE_HOME as unconfigured in development", () => {
     const preference = resolveEarlyLinuxPasswordStorePreference({
@@ -111,7 +158,7 @@ describe("DesktopEarlyElectronStartup", () => {
       homeDirectory: "/home/user",
       joinPath,
       readFileString: (path) => {
-        assert.equal(path, "/home/user/.t3/dev/desktop-settings.json");
+        assert.equal(path, "/home/user/.azure-code/dev/desktop-settings.json");
         return JSON.stringify({ linuxPasswordStore: "gnome-libsecret" });
       },
     });

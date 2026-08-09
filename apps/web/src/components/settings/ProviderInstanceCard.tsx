@@ -5,8 +5,10 @@ import {
   ChevronDownIcon,
   CopyIcon,
   DownloadIcon,
+  KeyRoundIcon,
   LoaderIcon,
   PlusIcon,
+  SaveIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react";
@@ -19,6 +21,7 @@ import {
   type ProviderInstanceEnvironmentVariable,
   type ProviderInstanceId,
   type ProviderDriverKind,
+  PROVIDER_API_KEY_ENVIRONMENT_BY_DRIVER,
   type ServerProvider,
   type ServerProviderModel,
 } from "@t3tools/contracts";
@@ -31,6 +34,7 @@ import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { Collapsible, CollapsibleContent } from "../ui/collapsible";
 import { DraftInput } from "../ui/draft-input";
+import { Input } from "../ui/input";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { ScrollArea } from "../ui/scroll-area";
 import { Switch } from "../ui/switch";
@@ -75,6 +79,26 @@ function makeEnvironmentDraftRow(
     sensitive: variable.sensitive,
     ...(variable.valueRedacted !== undefined ? { valueRedacted: variable.valueRedacted } : {}),
   };
+}
+
+export function hasStoredProviderApiKey(
+  environment: ReadonlyArray<ProviderInstanceEnvironmentVariable>,
+  name: string,
+): boolean {
+  return environment.some(
+    (variable) =>
+      variable.name === name && (variable.valueRedacted === true || variable.value.length > 0),
+  );
+}
+
+export function updateProviderApiKeyEnvironment(
+  environment: ReadonlyArray<ProviderInstanceEnvironmentVariable>,
+  name: string,
+  value: string,
+): ReadonlyArray<ProviderInstanceEnvironmentVariable> {
+  const withoutKey = environment.filter((variable) => variable.name !== name);
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? [...withoutKey, { name, value, sensitive: true }] : withoutKey;
 }
 
 /**
@@ -318,6 +342,74 @@ function ProviderEnvironmentSection(props: {
   );
 }
 
+function ProviderApiKeyField(props: {
+  readonly name: string;
+  readonly environment: ReadonlyArray<ProviderInstanceEnvironmentVariable>;
+  readonly onChange: (environment: ReadonlyArray<ProviderInstanceEnvironmentVariable>) => void;
+}) {
+  const [value, setValue] = useState("");
+  const stored = hasStoredProviderApiKey(props.environment, props.name);
+
+  const save = () => {
+    if (value.trim().length === 0) return;
+    props.onChange(updateProviderApiKeyEnvironment(props.environment, props.name, value));
+    setValue("");
+  };
+
+  const remove = () => {
+    props.onChange(updateProviderApiKeyEnvironment(props.environment, props.name, ""));
+    setValue("");
+  };
+
+  return (
+    <div className="grid gap-2">
+      <div className="flex items-center gap-2">
+        <KeyRoundIcon className="size-3.5 text-muted-foreground" aria-hidden />
+        <span className="text-xs font-medium text-foreground">API key</span>
+      </div>
+      <div className="flex min-w-0 items-center gap-2">
+        <Input
+          className="min-w-0 flex-1"
+          type="password"
+          autoComplete="off"
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") save();
+          }}
+          placeholder={stored ? "Stored securely · enter a new key to replace" : props.name}
+          aria-label={`${props.name} API key`}
+        />
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-8 shrink-0 gap-1.5 px-2 text-xs"
+          disabled={value.trim().length === 0}
+          onClick={save}
+        >
+          <SaveIcon className="size-3" aria-hidden />
+          Save
+        </Button>
+        {stored ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-8 shrink-0 px-2 text-xs text-muted-foreground hover:text-destructive"
+            onClick={remove}
+          >
+            Remove
+          </Button>
+        ) : null}
+      </div>
+      <span className="text-[11px] text-muted-foreground">
+        Stored in the environment secret store. The saved value is never returned to the app.
+      </span>
+    </div>
+  );
+}
+
 interface ProviderInstanceCardProps {
   readonly instanceId: ProviderInstanceId;
   readonly instance: ProviderInstanceConfig;
@@ -499,6 +591,24 @@ export function ProviderInstanceCard({
         ? ({ ...rest, environment: cleaned } as ProviderInstanceConfig)
         : (rest as ProviderInstanceConfig),
     );
+  };
+
+  const apiKeyEnvironmentName = driverKind
+    ? PROVIDER_API_KEY_ENVIRONMENT_BY_DRIVER[driverKind]
+    : undefined;
+  const environment = instance.environment ?? [];
+  const editableEnvironment = apiKeyEnvironmentName
+    ? environment.filter((variable) => variable.name !== apiKeyEnvironmentName)
+    : environment;
+  const updateEditableEnvironment = (
+    nextEnvironment: ReadonlyArray<ProviderInstanceEnvironmentVariable>,
+  ) => {
+    updateEnvironment([
+      ...nextEnvironment,
+      ...(apiKeyEnvironmentName
+        ? environment.filter((variable) => variable.name === apiKeyEnvironmentName)
+        : []),
+    ]);
   };
 
   const titleIconNode = driverKind ? (
@@ -759,10 +869,18 @@ export function ProviderInstanceCard({
 
             <div>
               <ProviderEnvironmentSection
-                environment={instance.environment ?? []}
-                onChange={updateEnvironment}
+                environment={editableEnvironment}
+                onChange={updateEditableEnvironment}
               />
             </div>
+
+            {apiKeyEnvironmentName ? (
+              <ProviderApiKeyField
+                name={apiKeyEnvironmentName}
+                environment={environment}
+                onChange={updateEnvironment}
+              />
+            ) : null}
 
             {driverOption ? (
               <ProviderSettingsForm

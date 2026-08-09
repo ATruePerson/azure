@@ -685,6 +685,11 @@ export function createServerEnvironmentAtoms<R, E>(
     updateStateAtom,
     settingsValueAtom,
     providersValueAtom,
+    codexCapabilities: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:codex-capabilities",
+      tag: WS_METHODS.serverGetCodexCapabilities,
+      staleTimeMs: 0,
+    }),
     traceDiagnostics: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:server:trace-diagnostics",
       tag: WS_METHODS.serverGetTraceDiagnostics,
@@ -755,6 +760,22 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.serverUpdateSettings,
       scheduler: configScheduler,
       concurrency: configConcurrency,
+    }),
+    setCodexSkillEnabled: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:set-codex-skill-enabled",
+      tag: WS_METHODS.serverSetCodexSkillEnabled,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId }) => environmentId,
+      },
+    }),
+    setCodexConfigEnabled: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:set-codex-config-enabled",
+      tag: WS_METHODS.serverSetCodexConfigEnabled,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId }) => environmentId,
+      },
     }),
     signalProcess: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:signal-process",

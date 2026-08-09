@@ -10,6 +10,7 @@ import {
   type LinuxPasswordStorePreference,
 } from "../linuxSecretStorage.ts";
 import {
+  LEGACY_DESKTOP_BASE_DIR_NAME,
   resolveDesktopBaseDir,
   resolveDesktopStateDir,
   type JoinPath,
@@ -20,6 +21,7 @@ interface EarlyDesktopSettingsInput {
   readonly homeDirectory: string;
   readonly joinPath: JoinPath;
   readonly readFileString: (path: string) => string;
+  readonly pathExists?: (path: string) => boolean;
 }
 
 type EarlyLinuxElectronOptionsInput = EarlyDesktopSettingsInput;
@@ -48,12 +50,15 @@ function resolveEarlyDesktopSettingsPath(input: {
   readonly env: NodeJS.ProcessEnv;
   readonly homeDirectory: string;
   readonly joinPath: JoinPath;
+  readonly pathExists?: (path: string) => boolean;
 }): string {
   const t3Home = Option.fromUndefinedOr(input.env.T3CODE_HOME);
+  const legacyBaseDir = input.joinPath(input.homeDirectory, LEGACY_DESKTOP_BASE_DIR_NAME);
   const baseDir = resolveDesktopBaseDir({
     homeDirectory: input.homeDirectory,
     joinPath: input.joinPath,
     t3Home,
+    legacyBaseDirExists: input.pathExists?.(legacyBaseDir) === true,
   });
   const stateDir = resolveDesktopStateDir({
     baseDir,
@@ -81,7 +86,7 @@ export function resolveEarlyLinuxElectronOptions(
 ): EarlyLinuxElectronOptions {
   const preference = resolveEarlyLinuxPasswordStorePreference(input);
   return {
-    linuxWmClass: isDevelopmentEnvironment(input.env) ? "t3code-dev" : "t3code",
+    linuxWmClass: isDevelopmentEnvironment(input.env) ? "azure-code-dev" : "azure-code",
     passwordStore: resolveLinuxPasswordStoreSwitch({
       preference,
       env: input.env,

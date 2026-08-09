@@ -22,7 +22,7 @@ const makeEnvironment = (overrides: Record<string, unknown> = {}) =>
     platform: "linux",
     isPackaged: true,
     isDevelopment: false,
-    displayName: "T3 Code (Alpha)",
+    displayName: "Azure Code",
     linuxWmClass: "t3code",
     linuxApplicationsDir: "/home/alice/.local/share/applications",
     appImagePath: Option.some("/home/alice/Applications/T3-Code.AppImage"),
@@ -105,13 +105,13 @@ const emptyRecording = (): RecordedRegistration => ({
 describe("DesktopLinuxUrlHandler", () => {
   it("renders a scheme-handler desktop entry with freedesktop Exec quoting", () => {
     const entry = DesktopLinuxUrlHandler.renderUrlHandlerDesktopEntry({
-      displayName: "T3 Code (Nightly)",
+      displayName: "Azure Code",
       execTarget: '/home/al ice/Apps/T3 "100%" $HOME\\x.AppImage',
       scheme: "t3code",
     });
 
     assert.include(entry, "[Desktop Entry]");
-    assert.include(entry, "Name=T3 Code (Nightly)");
+    assert.include(entry, "Name=Azure Code");
     // Exec composes both escaping layers: a literal backslash becomes four
     // backslashes in the file, a quote three characters, a dollar sign two
     // backslashes plus the sign.
@@ -128,7 +128,7 @@ describe("DesktopLinuxUrlHandler", () => {
     const writeError = new DesktopLinuxUrlHandler.DesktopLinuxUrlHandlerRegistrationError({
       step: "write-desktop-entry",
       scheme: "t3code",
-      desktopEntryPath: "/home/alice/.local/share/applications/t3code-url-handler.desktop",
+      desktopEntryPath: "/home/alice/.local/share/applications/azure-code-url-handler.desktop",
       cause: new Error("boom"),
     });
     assert.equal(
@@ -137,7 +137,7 @@ describe("DesktopLinuxUrlHandler", () => {
     );
     assert.equal(
       writeError.desktopEntryPath,
-      "/home/alice/.local/share/applications/t3code-url-handler.desktop",
+      "/home/alice/.local/share/applications/azure-code-url-handler.desktop",
     );
 
     const exitError = new DesktopLinuxUrlHandler.DesktopLinuxUrlHandlerRegistrationError({
@@ -161,17 +161,17 @@ describe("DesktopLinuxUrlHandler", () => {
       assert.equal(recorded.files.length, 1);
       assert.equal(
         recorded.files[0]?.path,
-        "/home/alice/.local/share/applications/t3code-url-handler.desktop",
+        "/home/alice/.local/share/applications/azure-code-url-handler.desktop",
       );
       assert.include(
         recorded.files[0]?.content,
         'Exec="/home/alice/Applications/T3-Code.AppImage" %U',
       );
-      assert.include(recorded.files[0]?.content, "MimeType=x-scheme-handler/t3code;");
+      assert.include(recorded.files[0]?.content, "MimeType=x-scheme-handler/azure-code;");
       assert.deepEqual(recorded.commands, [
         {
           command: "xdg-mime",
-          args: ["default", "t3code-url-handler.desktop", "x-scheme-handler/t3code"],
+          args: ["default", "azure-code-url-handler.desktop", "x-scheme-handler/azure-code"],
         },
       ]);
     });
@@ -218,7 +218,7 @@ describe("DesktopLinuxUrlHandler", () => {
           module: "FileSystem",
           method: "writeFileString",
           description: "read-only filesystem",
-          pathOrDescriptor: "/home/alice/.local/share/applications/t3code-url-handler.desktop",
+          pathOrDescriptor: "/home/alice/.local/share/applications/azure-code-url-handler.desktop",
         }),
       });
 

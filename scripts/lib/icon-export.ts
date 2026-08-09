@@ -7,6 +7,22 @@ export interface PngIconImage {
   readonly contents: Buffer;
 }
 
+export const MAC_ICNS_PNG_CHUNK_TYPES = [
+  { type: "ic11", size: 32 },
+  { type: "ic12", size: 64 },
+  { type: "ic07", size: 128 },
+  { type: "ic13", size: 256 },
+  { type: "ic08", size: 256 },
+  { type: "ic14", size: 512 },
+  { type: "ic09", size: 512 },
+  { type: "ic10", size: 1024 },
+] as const;
+
+export interface IcnsPngImage {
+  readonly type: string;
+  readonly contents: Buffer;
+}
+
 export function readPngDimensions(contents: Buffer): {
   readonly width: number;
   readonly height: number;
@@ -23,6 +39,47 @@ export function readPngDimensions(contents: Buffer): {
     width: contents.readUInt32BE(16),
     height: contents.readUInt32BE(20),
   };
+}
+
+/** Encodes PNG renditions directly into a standard ICNS container. */
+export function encodePngIcns(images: ReadonlyArray<IcnsPngImage>): Buffer {
+  if (images.length === 0) {
+    throw new Error("An ICNS file requires at least one PNG rendition.");
+  }
+
+  const seenTypes = new Set<string>();
+  for (const image of images) {
+    if (image.type.length !== 4 || !/^[\x20-\x7e]{4}$/u.test(image.type)) {
+      throw new Error(`ICNS chunk type must be four ASCII characters, got ${image.type}.`);
+    }
+    if (seenTypes.has(image.type)) {
+      throw new Error(`ICNS chunk type ${image.type} was provided more than once.`);
+    }
+    if (image.contents.length === 0) {
+      throw new Error(`ICNS chunk ${image.type} is empty.`);
+    }
+    seenTypes.add(image.type);
+  }
+
+  const headerSize = 8;
+  const chunkHeaderSize = 8;
+  const totalSize = images.reduce(
+    (size, image) => size + chunkHeaderSize + image.contents.length,
+    headerSize,
+  );
+  const icns = Buffer.alloc(totalSize);
+  icns.write("icns", 0, "ascii");
+  icns.writeUInt32BE(totalSize, 4);
+
+  let offset = headerSize;
+  for (const image of images) {
+    icns.write(image.type, offset, "ascii");
+    icns.writeUInt32BE(chunkHeaderSize + image.contents.length, offset + 4);
+    image.contents.copy(icns, offset + chunkHeaderSize);
+    offset += chunkHeaderSize + image.contents.length;
+  }
+
+  return icns;
 }
 
 /** Encodes PNG renditions directly into a modern, multi-resolution ICO file. */

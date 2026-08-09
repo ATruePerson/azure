@@ -68,6 +68,13 @@ import {
 } from "./orchestration.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 import {
+  CodexCapabilities,
+  CodexCapabilitiesError,
+  CodexCapabilitiesInput,
+  CodexConfigEnabledInput,
+  CodexSkillEnabledInput,
+} from "./codexCapabilities.ts";
+import {
   RelayClientInstallFailedError,
   RelayClientInstallProgressEventSchema,
   RelayClientStatusSchema,
@@ -246,6 +253,9 @@ export const WS_METHODS = {
   serverReportHostPowerState: "server.reportHostPowerState",
   serverGetBackgroundPolicy: "server.getBackgroundPolicy",
   serverGetUsageSummary: "server.getUsageSummary",
+  serverGetCodexCapabilities: "server.getCodexCapabilities",
+  serverSetCodexSkillEnabled: "server.setCodexSkillEnabled",
+  serverSetCodexConfigEnabled: "server.setCodexConfigEnabled",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -333,6 +343,24 @@ export const WsServerGetSettingsRpc = Rpc.make(WS_METHODS.serverGetSettings, {
   payload: Schema.Struct({}),
   success: ServerSettings,
   error: Schema.Union([ServerSettingsError, EnvironmentAuthorizationError]),
+});
+
+export const WsServerGetCodexCapabilitiesRpc = Rpc.make(WS_METHODS.serverGetCodexCapabilities, {
+  payload: CodexCapabilitiesInput,
+  success: CodexCapabilities,
+  error: Schema.Union([CodexCapabilitiesError, EnvironmentAuthorizationError]),
+});
+
+export const WsServerSetCodexSkillEnabledRpc = Rpc.make(WS_METHODS.serverSetCodexSkillEnabled, {
+  payload: CodexSkillEnabledInput,
+  success: CodexCapabilities,
+  error: Schema.Union([CodexCapabilitiesError, EnvironmentAuthorizationError]),
+});
+
+export const WsServerSetCodexConfigEnabledRpc = Rpc.make(WS_METHODS.serverSetCodexConfigEnabled, {
+  payload: CodexConfigEnabledInput,
+  success: CodexCapabilities,
+  error: Schema.Union([CodexCapabilitiesError, EnvironmentAuthorizationError]),
 });
 
 export const WsServerUpdateSettingsRpc = Rpc.make(WS_METHODS.serverUpdateSettings, {
@@ -820,6 +848,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerUpsertKeybindingRpc,
   WsServerRemoveKeybindingRpc,
   WsServerGetSettingsRpc,
+  WsServerGetCodexCapabilitiesRpc,
+  WsServerSetCodexSkillEnabledRpc,
+  WsServerSetCodexConfigEnabledRpc,
   WsServerUpdateSettingsRpc,
   WsServerDiscoverSourceControlRpc,
   WsServerGetTraceDiagnosticsRpc,

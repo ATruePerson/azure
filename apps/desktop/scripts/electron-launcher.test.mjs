@@ -1,12 +1,21 @@
 import { assert, describe, it } from "vite-plus/test";
 
 import {
+  APP_BUNDLE_ID,
+  APP_DISPLAY_NAME,
+  APP_PROTOCOL_SCHEMES,
   makeDevelopmentLauncherScript,
   resolveElectronBinaryPath,
   resolveMacLauncherPaths,
 } from "./electron-launcher.mjs";
 
 describe("electron development launcher", () => {
+  it("uses the isolated Azure Code macOS identity", () => {
+    assert.equal(APP_DISPLAY_NAME, "Azure Code");
+    assert.equal(APP_BUNDLE_ID, "com.atrueperson.azurecode");
+    assert.deepEqual(APP_PROTOCOL_SCHEMES, ["azure-code", "t3code"]);
+  });
+
   it("uses captured values only as fallbacks for a live runner environment", () => {
     const script = makeDevelopmentLauncherScript({
       electronBinaryPath: "/repo/node_modules/electron/Electron",
@@ -28,6 +37,7 @@ describe("electron development launcher", () => {
       script,
       "exec '/repo/node_modules/electron/Electron' --t3code-dev-root='/repo/apps/desktop' '/repo/apps/desktop/dist-electron/main.cjs' \"$@\"",
     );
+    assert.include(script, "T3CODE_PORT");
   });
 
   it("repairs Electron before loading the package entrypoint", () => {
@@ -52,18 +62,18 @@ describe("electron development launcher", () => {
 
   it("keeps the native Electron executable name inside the branded macOS bundle", () => {
     const paths = resolveMacLauncherPaths(
-      "/repo/apps/desktop/.electron-runtime/T3 Code (Dev).app",
-      "T3 Code (Dev)",
+      "/repo/apps/desktop/.electron-runtime/Azure Code.app",
+      "Azure Code",
     );
 
-    assert.equal(paths.launcherExecutableName, "T3 Code (Dev) Launcher");
+    assert.equal(paths.launcherExecutableName, "Azure Code Launcher");
     assert.equal(
       paths.launcherBinaryPath,
-      "/repo/apps/desktop/.electron-runtime/T3 Code (Dev).app/Contents/MacOS/T3 Code (Dev) Launcher",
+      "/repo/apps/desktop/.electron-runtime/Azure Code.app/Contents/MacOS/Azure Code Launcher",
     );
     assert.equal(
       paths.runtimeElectronBinaryPath,
-      "/repo/apps/desktop/.electron-runtime/T3 Code (Dev).app/Contents/MacOS/Electron",
+      "/repo/apps/desktop/.electron-runtime/Azure Code.app/Contents/MacOS/Electron",
     );
 
     const script = makeDevelopmentLauncherScript({
@@ -74,7 +84,7 @@ describe("electron development launcher", () => {
     });
     assert.include(
       script,
-      "exec '/repo/apps/desktop/.electron-runtime/T3 Code (Dev).app/Contents/MacOS/Electron'",
+      "exec '/repo/apps/desktop/.electron-runtime/Azure Code.app/Contents/MacOS/Electron'",
     );
     assert.notInclude(script, "node_modules/electron");
   });

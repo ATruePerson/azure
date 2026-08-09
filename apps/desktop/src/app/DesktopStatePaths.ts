@@ -2,6 +2,9 @@ import * as Option from "effect/Option";
 
 export type JoinPath = (first: string, ...segments: string[]) => string;
 
+export const DESKTOP_BASE_DIR_NAME = ".azure-code";
+export const LEGACY_DESKTOP_BASE_DIR_NAME = ".t3";
+
 function normalizeConfiguredBaseDir(t3Home: Option.Option<string>): Option.Option<string> {
   if (Option.isNone(t3Home)) {
     return Option.none();
@@ -14,9 +17,14 @@ export function resolveDesktopBaseDir(input: {
   readonly homeDirectory: string;
   readonly joinPath: JoinPath;
   readonly t3Home: Option.Option<string>;
+  /** Existing T3 state wins so a rename never strands or overwrites it. */
+  readonly legacyBaseDirExists?: boolean;
 }): string {
   return Option.getOrElse(normalizeConfiguredBaseDir(input.t3Home), () =>
-    input.joinPath(input.homeDirectory, ".t3"),
+    input.joinPath(
+      input.homeDirectory,
+      input.legacyBaseDirExists === true ? LEGACY_DESKTOP_BASE_DIR_NAME : DESKTOP_BASE_DIR_NAME,
+    ),
   );
 }
 

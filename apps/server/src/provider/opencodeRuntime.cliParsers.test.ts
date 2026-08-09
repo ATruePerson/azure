@@ -2,7 +2,12 @@ import * as NodeAssert from "node:assert/strict";
 
 import { describe, it } from "vite-plus/test";
 
-import { parseModelsCliOutput, parseAgentListCliOutput } from "./opencodeRuntime.ts";
+import {
+  parseAgentListCliOutput,
+  parseModelsCliOutput,
+  parseOpenCodeCommandsDebugOutput,
+  parseOpenCodeSkillsDebugOutput,
+} from "./opencodeRuntime.ts";
 
 describe("parseModelsCliOutput", () => {
   it("parses a single model from a single provider", () => {
@@ -225,5 +230,49 @@ describe("parseAgentListCliOutput", () => {
     const result = parseAgentListCliOutput(stdout);
     NodeAssert.equal(result[0]!.hidden, true);
     NodeAssert.equal(result[1]!.hidden, false);
+  });
+});
+
+describe("parseOpenCodeSkillsDebugOutput", () => {
+  it("parses skill metadata without retaining skill bodies", () => {
+    const result = parseOpenCodeSkillsDebugOutput(
+      JSON.stringify([
+        {
+          name: "fiction-writer",
+          description: "Write fiction",
+          location: "/skills/fiction-writer/SKILL.md",
+          content: "large body",
+        },
+        { name: "missing-location" },
+      ]),
+    );
+
+    NodeAssert.deepEqual(result, [
+      {
+        name: "fiction-writer",
+        description: "Write fiction",
+        location: "/skills/fiction-writer/SKILL.md",
+      },
+    ]);
+  });
+
+  it("returns an empty list for invalid output", () => {
+    NodeAssert.deepEqual(parseOpenCodeSkillsDebugOutput("not json"), []);
+  });
+});
+
+describe("parseOpenCodeCommandsDebugOutput", () => {
+  it("parses configured commands", () => {
+    const result = parseOpenCodeCommandsDebugOutput(
+      JSON.stringify({
+        command: {
+          review: { description: "Review the diff", template: "Review" },
+        },
+      }),
+    );
+
+    NodeAssert.deepEqual(result, [
+      { name: "review", source: "command", description: "Review the diff" },
+    ]);
   });
 });

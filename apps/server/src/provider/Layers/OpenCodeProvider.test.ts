@@ -38,6 +38,8 @@ const runtimeMock = {
     inventory: {
       providerList: { connected: [] as string[], all: [] as unknown[], default: {} },
       agents: [] as unknown[],
+      skills: [],
+      commands: [],
     } as unknown,
   },
   reset() {
@@ -48,6 +50,8 @@ const runtimeMock = {
     this.state.inventory = {
       providerList: { connected: [], all: [] as unknown[], default: {} },
       agents: [] as unknown[],
+      skills: [],
+      commands: [],
     };
   },
 };
@@ -182,6 +186,17 @@ it.layer(testLayer)("checkOpenCodeProviderStatus", (it) => {
           { name: "build", hidden: false, mode: "primary" },
           { name: "plan", hidden: false, mode: "primary" },
         ],
+        skills: [
+          {
+            name: "fiction-writer",
+            description: "Write fiction",
+            location: "/skills/fiction-writer/SKILL.md",
+          },
+        ],
+        commands: [
+          { name: "review", description: "Review the diff", source: "command" },
+          { name: "fiction-writer", description: "Write fiction", source: "skill" },
+        ],
       };
 
       const snapshot = yield* checkOpenCodeProviderStatus(makeOpenCodeSettings(), process.cwd());
@@ -204,6 +219,56 @@ it.layer(testLayer)("checkOpenCodeProviderStatus", (it) => {
         agentDescriptor.options.find((option) => option.isDefault === true)?.id,
         "build",
       );
+      NodeAssert.deepEqual(snapshot.skills, [
+        {
+          name: "fiction-writer",
+          description: "Write fiction",
+          shortDescription: "Write fiction",
+          path: "/skills/fiction-writer/SKILL.md",
+          enabled: true,
+        },
+      ]);
+      NodeAssert.deepEqual(snapshot.slashCommands, [
+        { name: "review", description: "Review the diff" },
+      ]);
+    }),
+  );
+
+  it.effect("excludes NVIDIA from OpenCode models and connected-provider reporting", () =>
+    Effect.gen(function* () {
+      runtimeMock.state.inventory = {
+        providerList: {
+          connected: ["opencode", "nvidia"],
+          all: [
+            {
+              id: "opencode",
+              name: "OpenCode",
+              models: {
+                "nvidia-nemotron": { id: "nvidia-nemotron", name: "NVIDIA Nemotron" },
+              },
+            },
+            {
+              id: "nvidia",
+              name: "NVIDIA",
+              models: {
+                "nvidia-nemotron": { id: "nvidia-nemotron", name: "NVIDIA Nemotron" },
+              },
+            },
+          ],
+          default: {},
+        },
+        agents: [],
+        skills: [],
+        commands: [],
+      };
+
+      const snapshot = yield* checkOpenCodeProviderStatus(makeOpenCodeSettings(), process.cwd());
+
+      NodeAssert.deepEqual(
+        snapshot.models.map((model) => model.slug),
+        ["opencode/nvidia-nemotron"],
+      );
+      NodeAssert.equal(snapshot.message, "1 upstream provider connected through OpenCode.");
     }),
   );
 

@@ -1,4 +1,5 @@
 import * as DateTime from "effect/DateTime";
+import * as Data from "effect/Data";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -14,7 +15,10 @@ import * as CodexSchema from "effect-codex-app-server/schema";
 import * as CodexErrors from "effect-codex-app-server/errors";
 
 import type {
-  CodexSettings,
+  CodexCapabilities,
+  CodexConfigEnabledInput,
+  CodexSkillEnabledInput,
+  ProviderInstanceConfig,
   ServerProvider,
   ServerProviderState,
   ModelCapabilities,
@@ -22,7 +26,12 @@ import type {
   ServerProviderModel,
   ServerProviderSkill,
 } from "@t3tools/contracts";
-import { PREFERRED_DEFAULT_CODEX_MODELS, ServerSettingsError } from "@t3tools/contracts";
+import {
+  CodexSettings,
+  PREFERRED_DEFAULT_CODEX_MODELS,
+  ProviderDriverKind,
+  ServerSettingsError,
+} from "@t3tools/contracts";
 
 import { createModelCapabilities } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
@@ -33,8 +42,15 @@ import {
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
+import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
+import { resolveCodexHomeLayout } from "../Drivers/CodexHomeLayout.ts";
 import packageJson from "../../../package.json" with { type: "json" };
 const isCodexAppServerSpawnError = Schema.is(CodexErrors.CodexAppServerSpawnError);
+const decodeCodexSettings = Schema.decodeUnknownSync(CodexSettings);
+
+class CodexCapabilityTargetError extends Data.TaggedError("CodexCapabilityTargetError")<{
+  readonly detail: string;
+}> {}
 
 const CODEX_APP_SERVER_PROBE_FORCE_KILL_AFTER = "2 seconds" as const;
 
@@ -306,31 +322,13 @@ const requestAllCodexModels = Effect.fn("requestAllCodexModels")(function* (
   return models;
 });
 
-export function buildCodexInitializeParams(): CodexSchema.V1InitializeParams {
-  return {
-    clientInfo: {
-      name: "t3code_desktop",
-      title: "T3 Code Desktop",
-      version: packageJson.version,
-    },
-    capabilities: {
-      experimentalApi: true,
-    },
-  };
-}
-
-const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(function* (input: {
+const openCodexAppServer = Effect.fn("openCodexAppServer")(function* (input: {
   readonly binaryPath: string;
   readonly homePath?: string;
   readonly launchArgs?: string;
   readonly cwd: string;
-  readonly customModels?: ReadonlyArray<string>;
   readonly environment?: NodeJS.ProcessEnv;
 }) {
-  // `~` is not shell-expanded when env vars are set via `child_process.spawn`,
-  // so `CODEX_HOME=~/.codex_work` would reach codex verbatim and trip
-  // "CODEX_HOME points to '~/.codex_work', but that path does not exist".
-  // Expand here for parity with `CodexTextGeneration`/`CodexSessionRuntime`.
   const resolvedHomePath = input.homePath ? expandHomePath(input.homePath) : undefined;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const environment = {
@@ -340,10 +338,7 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
   const spawnCommand = yield* resolveSpawnCommand(
     input.binaryPath,
     codexAppServerArgs(input.launchArgs),
-    {
-      env: environment,
-      extendEnv: true,
-    },
+    { env: environment, extendEnv: true },
   );
   const child = yield* spawner
     .spawn(
@@ -368,18 +363,231 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
   const client = yield* Effect.service(CodexClient.CodexAppServerClient).pipe(
     Effect.provide(clientContext),
   );
+  const initialize = yield* client.request("initialize", buildCodexInitializeParams());
+  yield* client.notify("initialized", undefined);
+  return { client, initialize };
+});
 
-  const initialize = yield* client.request("initialize", {
+export const loadCodexCapabilities = Effect.fn("loadCodexCapabilities")(function* (input: {
+  readonly settings: CodexSettings;
+  readonly cwd: string;
+  readonly environment?: NodeJS.ProcessEnv;
+}): Effect.fn.Return<
+  CodexCapabilities,
+  CodexErrors.CodexAppServerError,
+  ChildProcessSpawner.ChildProcessSpawner | Scope.Scope
+> {
+  const { client } = yield* openCodexAppServer({
+    binaryPath: input.settings.binaryPath,
+    homePath: input.settings.homePath,
+    launchArgs: resolveCodexLaunchArgs(input.settings.launchArgs, input.environment),
+    cwd: input.cwd,
+    ...(input.environment ? { environment: input.environment } : {}),
+  });
+  return yield* requestCodexCapabilities(client, input.cwd);
+});
+
+const CODEX_CONFIG_KEY_SEGMENT = /^[A-Za-z0-9_@-]+$/;
+
+function record(value: unknown): Readonly<Record<string, unknown>> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Readonly<Record<string, unknown>>)
+    : undefined;
+}
+
+export const resolveCodexCapabilitiesTarget = Effect.fn("resolveCodexCapabilitiesTarget")(
+  function* (entry: ProviderInstanceConfig | undefined) {
+    if (entry?.driver !== ProviderDriverKind.make("codex")) {
+      return yield* new CodexCapabilityTargetError({
+        detail: "The selected provider instance is not Codex.",
+      });
+    }
+    const settings = yield* Effect.try(() => decodeCodexSettings(entry.config ?? {}));
+    const homeLayout = yield* resolveCodexHomeLayout(settings);
+    return {
+      settings: {
+        ...settings,
+        enabled: entry.enabled ?? settings.enabled,
+        homePath: homeLayout.effectiveHomePath ?? "",
+      },
+      environment: mergeProviderInstanceEnvironment(entry.environment),
+    };
+  },
+);
+
+export const requestCodexCapabilities = Effect.fn("requestCodexCapabilities")(function* (
+  client: CodexClient.CodexAppServerClient["Service"],
+  cwd: string,
+) {
+  const [config, hooks, plugins, skills, mcpServers] = yield* Effect.all(
+    [
+      client.request("config/read", { includeLayers: false }),
+      client.request("hooks/list", { cwds: [cwd] }),
+      client.request("plugin/installed", { cwds: [cwd] }),
+      client.request("skills/list", { cwds: [cwd], forceReload: true }),
+      client.request("mcpServerStatus/list", { detail: "toolsAndAuthOnly" }),
+    ] as const,
+    { concurrency: "unbounded" },
+  );
+
+  const mcpConfig = record(config.config.mcp_servers) ?? {};
+  const mcpStatusByName = new Map(mcpServers.data.map((server) => [server.name, server]));
+  const configuredMcpServers = Object.entries(mcpConfig).map(([id, value]) => {
+    const status = mcpStatusByName.get(id);
+    const enabled = record(value)?.enabled !== false;
+    return {
+      id,
+      label: status?.serverInfo?.name ?? id,
+      detail: status?.authStatus ?? (enabled ? "Configured" : "Disabled"),
+      enabled,
+      canToggle: CODEX_CONFIG_KEY_SEGMENT.test(id),
+    };
+  });
+  const configuredMcpNames = new Set(Object.keys(mcpConfig));
+
+  return {
+    hooks: hooks.data.flatMap((entry) =>
+      entry.hooks.map((hook) => ({
+        id: hook.key,
+        label: `${hook.eventName}: ${hook.handlerType}`,
+        detail: hook.source,
+        enabled: hook.enabled,
+        canToggle: false,
+      })),
+    ),
+    plugins: plugins.marketplaces.flatMap((marketplace) =>
+      marketplace.plugins.map((plugin) => ({
+        id: plugin.id,
+        label: plugin.interface?.displayName ?? plugin.name,
+        detail: marketplace.name,
+        enabled: plugin.enabled,
+        canToggle: plugin.installed && CODEX_CONFIG_KEY_SEGMENT.test(plugin.id),
+      })),
+    ),
+    skills: skills.data.flatMap((entry) =>
+      entry.skills.map((skill) => ({
+        id: skill.path,
+        label: skill.interface?.displayName ?? skill.name,
+        detail: skill.scope,
+        enabled: skill.enabled,
+        canToggle: true,
+      })),
+    ),
+    mcpServers: configuredMcpServers.concat(
+      mcpServers.data
+        .filter((server) => !configuredMcpNames.has(server.name))
+        .map((server) => ({
+          id: server.name,
+          label: server.serverInfo?.name ?? server.name,
+          detail: server.authStatus,
+          enabled: true,
+          canToggle: false,
+        })),
+    ),
+  };
+});
+
+type CodexSkillToggle = Pick<CodexSkillEnabledInput, "path" | "enabled">;
+type CodexConfigToggle = Pick<CodexConfigEnabledInput, "kind" | "id" | "enabled">;
+
+export const setCodexSkillEnabledWithClient = Effect.fn("setCodexSkillEnabledWithClient")(
+  function* (
+    client: CodexClient.CodexAppServerClient["Service"],
+    cwd: string,
+    skill: CodexSkillToggle,
+  ) {
+    yield* client.request("skills/config/write", skill);
+    return yield* requestCodexCapabilities(client, cwd);
+  },
+);
+
+export const setCodexConfigEnabledWithClient = Effect.fn("setCodexConfigEnabledWithClient")(
+  function* (
+    client: CodexClient.CodexAppServerClient["Service"],
+    cwd: string,
+    config: CodexConfigToggle,
+  ) {
+    const key = config.kind === "plugin" ? "plugins" : "mcp_servers";
+    yield* client.request("config/value/write", {
+      keyPath: `${key}.${config.id}.enabled`,
+      mergeStrategy: "replace",
+      value: config.enabled,
+    });
+    if (config.kind === "mcp") {
+      yield* client.request("config/mcpServer/reload", undefined);
+    }
+    return yield* requestCodexCapabilities(client, cwd);
+  },
+);
+
+export const setCodexSkillEnabled = Effect.fn("setCodexSkillEnabled")(function* (input: {
+  readonly settings: CodexSettings;
+  readonly cwd: string;
+  readonly skill: CodexSkillToggle;
+  readonly environment?: NodeJS.ProcessEnv;
+}): Effect.fn.Return<
+  CodexCapabilities,
+  CodexErrors.CodexAppServerError,
+  ChildProcessSpawner.ChildProcessSpawner | Scope.Scope
+> {
+  const { client } = yield* openCodexAppServer({
+    binaryPath: input.settings.binaryPath,
+    homePath: input.settings.homePath,
+    launchArgs: resolveCodexLaunchArgs(input.settings.launchArgs, input.environment),
+    cwd: input.cwd,
+    ...(input.environment ? { environment: input.environment } : {}),
+  });
+  return yield* setCodexSkillEnabledWithClient(client, input.cwd, input.skill);
+});
+
+export const setCodexConfigEnabled = Effect.fn("setCodexConfigEnabled")(function* (input: {
+  readonly settings: CodexSettings;
+  readonly cwd: string;
+  readonly config: CodexConfigToggle;
+  readonly environment?: NodeJS.ProcessEnv;
+}): Effect.fn.Return<
+  CodexCapabilities,
+  CodexErrors.CodexAppServerError,
+  ChildProcessSpawner.ChildProcessSpawner | Scope.Scope
+> {
+  const { client } = yield* openCodexAppServer({
+    binaryPath: input.settings.binaryPath,
+    homePath: input.settings.homePath,
+    launchArgs: resolveCodexLaunchArgs(input.settings.launchArgs, input.environment),
+    cwd: input.cwd,
+    ...(input.environment ? { environment: input.environment } : {}),
+  });
+  return yield* setCodexConfigEnabledWithClient(client, input.cwd, input.config);
+});
+
+export function buildCodexInitializeParams(): CodexSchema.V1InitializeParams {
+  return {
     clientInfo: {
       name: "t3code_desktop",
       title: "T3 Code Desktop",
-      version: "0.1.0",
+      version: packageJson.version,
     },
     capabilities: {
       experimentalApi: true,
     },
+  };
+}
+
+const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(function* (input: {
+  readonly binaryPath: string;
+  readonly homePath?: string;
+  readonly launchArgs?: string;
+  readonly cwd: string;
+  readonly customModels?: ReadonlyArray<string>;
+  readonly environment?: NodeJS.ProcessEnv;
+}) {
+  const { client, initialize } = yield* openCodexAppServer({
+    binaryPath: input.binaryPath,
+    cwd: input.cwd,
+    ...(input.homePath ? { homePath: input.homePath } : {}),
+    ...(input.launchArgs ? { launchArgs: input.launchArgs } : {}),
+    ...(input.environment ? { environment: input.environment } : {}),
   });
-  yield* client.notify("initialized", undefined);
 
   // Extract the version string after the first '/' in userAgent, up to the next space or the end
   const versionMatch = initialize.userAgent.match(/\/([^\s]+)/);

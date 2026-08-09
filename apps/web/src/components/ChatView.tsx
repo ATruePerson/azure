@@ -3856,7 +3856,7 @@ function ChatViewContent(props: ChatViewProps) {
   }, []);
 
   // Anchored end space intentionally disables LegendList's normal end-follow so
-  // the sent message can stay near the top. T3 only owns streaming adjustments
+  // the sent message can stay near the top. Azure Code only owns streaming adjustments
   // during that mode; LegendList owns ordinary end-follow everywhere else.
   useEffect(() => {
     if (!activeThread?.id) {

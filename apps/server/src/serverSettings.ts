@@ -11,15 +11,9 @@
  * @module ServerSettings
  */
 import {
-  DEFAULT_TEXT_GENERATION_MODEL,
-  DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
-  DEFAULT_MODEL_BY_PROVIDER,
   DEFAULT_SERVER_SETTINGS,
-  type ModelSelection,
   type ProviderInstanceConfig,
   type ProviderInstanceEnvironmentVariable,
-  ProviderDriverKind,
-  ProviderInstanceId,
   ServerSettings,
   ServerSettingsError,
   type ServerSettingsPatch,
@@ -46,10 +40,7 @@ import { writeFileStringAtomically } from "./atomicWrite.ts";
 import * as ServerConfig from "./config.ts";
 import { type DeepPartial, deepMerge } from "@t3tools/shared/Struct";
 import { fromJsonStringPretty, fromLenientJson } from "@t3tools/shared/schemaJson";
-import {
-  applyServerSettingsPatch,
-  isModelSelectionProviderEnabled,
-} from "@t3tools/shared/serverSettings";
+import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 
 export { resolveSourceControlWriterModelSelection } from "@t3tools/shared/serverSettings";
@@ -61,18 +52,43 @@ const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
+const PROVIDER_API_KEY_ENVIRONMENT_NAMES = new Set(["NVIDIA_API_KEY", "OPENROUTER_API_KEY"]);
+
+function validateProviderEnvironmentSecrets(
+  settings: ServerSettings,
+): Effect.Effect<void, ServerSettingsError> {
+  for (const [instanceId, instance] of Object.entries(settings.providerInstances)) {
+    for (const variable of instance.environment ?? []) {
+      if (PROVIDER_API_KEY_ENVIRONMENT_NAMES.has(variable.name) && !variable.sensitive) {
+        return Effect.fail(
+          new ServerSettingsError({
+            settingsPath: "<memory>",
+            operation: "normalize",
+            providerInstanceId: instanceId,
+            environmentVariable: variable.name,
+            cause: new Error("Provider API keys must be stored as sensitive values."),
+          }),
+        );
+      }
+    }
+  }
+  return Effect.void;
+}
+
 const normalizeServerSettings = (
   settings: ServerSettings,
 ): Effect.Effect<ServerSettings, ServerSettingsError> =>
-  encodeServerSettings(settings).pipe(
+  validateProviderEnvironmentSecrets(settings).pipe(
+    Effect.andThen(encodeServerSettings(settings)),
     Effect.flatMap(decodeServerSettings),
-    Effect.mapError(
-      (cause) =>
-        new ServerSettingsError({
-          settingsPath: "<memory>",
-          operation: "normalize",
-          cause,
-        }),
+    Effect.mapError((cause) =>
+      Schema.is(ServerSettingsError)(cause)
+        ? cause
+        : new ServerSettingsError({
+            settingsPath: "<memory>",
+            operation: "normalize",
+            cause,
+          }),
     ),
   );
 
@@ -183,28 +199,7 @@ const ServerSettingsJson = fromLenientJson(ServerSettings);
 const decodeServerSettingsJsonExit = Schema.decodeUnknownExit(ServerSettingsJson);
 
 function resolveTextGenerationProvider(settings: ServerSettings): ServerSettings {
-  return isModelSelectionProviderEnabled(settings, settings.textGenerationModelSelection)
-    ? settings
-    : fallbackTextGenerationProvider(settings);
-}
-
-function fallbackTextGenerationProvider(settings: ServerSettings): ServerSettings {
-  const fallbackEntry = Object.entries(settings.providers).find(([, provider]) => provider.enabled);
-  const fallback = fallbackEntry ? ProviderDriverKind.make(fallbackEntry[0]) : undefined;
-  if (!fallback) {
-    return settings;
-  }
-
-  return {
-    ...settings,
-    textGenerationModelSelection: {
-      instanceId: ProviderInstanceId.make(fallback),
-      model:
-        DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[fallback] ??
-        DEFAULT_MODEL_BY_PROVIDER[fallback] ??
-        DEFAULT_TEXT_GENERATION_MODEL,
-    } satisfies ModelSelection,
-  };
+  return settings;
 }
 
 // Values under these keys are compared as a whole — never stripped field-by-field.

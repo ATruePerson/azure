@@ -89,7 +89,7 @@ export function ServerUpdateAction({
       toastManager.add({
         type: "success",
         title: "Update command copied",
-        description: `Run \`${command}\` on ${serverLabel} to update it.`,
+        description: `Run the copied command on ${serverLabel} to update it.`,
       });
     },
     onError: (error) => {
@@ -125,7 +125,7 @@ export function ServerUpdateAction({
       toastManager.add({
         type: "success",
         title: `${serverLabel} updated`,
-        description: `Reconnected on t3@${result.value.targetVersion}.`,
+        description: `Reconnected on version ${result.value.targetVersion}.`,
       });
     } finally {
       pendingUpdateEnvironmentIds.delete(environmentId);

@@ -1,4 +1,6 @@
 import {
+  type ServerProviderSkill,
+  type ServerProviderSlashCommand,
   type ModelCapabilities,
   type OpenCodeSettings,
   type ServerProviderModel,
@@ -217,8 +219,12 @@ function openCodeCapabilitiesForModel(input: {
   });
 }
 
+function connectedOpenCodeProviderIds(input: OpenCodeInventory): ReadonlyArray<string> {
+  return input.providerList.connected.filter((id) => id !== "nvidia");
+}
+
 function flattenOpenCodeModels(input: OpenCodeInventory): ReadonlyArray<ServerProviderModel> {
-  const connected = new Set(input.providerList.connected);
+  const connected = new Set(connectedOpenCodeProviderIds(input));
   const models: Array<ServerProviderModel> = [];
 
   for (const provider of input.providerList.all) {
@@ -250,6 +256,48 @@ function flattenOpenCodeModels(input: OpenCodeInventory): ReadonlyArray<ServerPr
   return models.toSorted((left, right) => left.name.localeCompare(right.name));
 }
 
+function openCodeSkills(input: OpenCodeInventory): ReadonlyArray<ServerProviderSkill> {
+  return input.skills.flatMap((skill) => {
+    const name = nonEmptyTrimmed(skill.name);
+    const path = nonEmptyTrimmed(skill.location);
+    if (!name || !path) {
+      return [];
+    }
+    const description = nonEmptyTrimmed(skill.description);
+    return [
+      {
+        name,
+        path,
+        enabled: true,
+        ...(description ? { description, shortDescription: description } : {}),
+      },
+    ];
+  });
+}
+
+function openCodeSlashCommands(
+  input: OpenCodeInventory,
+): ReadonlyArray<ServerProviderSlashCommand> {
+  return input.commands.flatMap((command) => {
+    if (command.source === "skill") {
+      return [];
+    }
+    const name = nonEmptyTrimmed(command.name);
+    if (!name) {
+      return [];
+    }
+    const description = nonEmptyTrimmed(command.description);
+    const hint = command.hints?.map(nonEmptyTrimmed).find((value) => value !== undefined);
+    return [
+      {
+        name,
+        ...(description ? { description } : {}),
+        ...(hint ? { input: { hint } } : {}),
+      },
+    ];
+  });
+}
+
 export const makePendingOpenCodeProvider = (
   openCodeSettings: OpenCodeSettings,
 ): Effect.Effect<ServerProviderDraft> =>
@@ -274,8 +322,8 @@ export const makePendingOpenCodeProvider = (
           auth: { status: "unknown" },
           message:
             openCodeSettings.serverUrl.trim().length > 0
-              ? "OpenCode is disabled in T3 Code settings. A server URL is configured."
-              : "OpenCode is disabled in T3 Code settings.",
+              ? "OpenCode is disabled in Azure Code settings. A server URL is configured."
+              : "OpenCode is disabled in Azure Code settings.",
         },
       });
     }
@@ -339,8 +387,8 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
         status: "warning",
         auth: { status: "unknown" },
         message: isExternalServer
-          ? "OpenCode is disabled in T3 Code settings. A server URL is configured."
-          : "OpenCode is disabled in T3 Code settings.",
+          ? "OpenCode is disabled in Azure Code settings. A server URL is configured."
+          : "OpenCode is disabled in Azure Code settings.",
       },
     });
   }
@@ -368,7 +416,7 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
     if (!version) {
       return fallback(
         new Error(
-          `Unable to determine OpenCode version from \`opencode --version\` output. T3 Code requires OpenCode v${MINIMUM_OPENCODE_VERSION} or newer.`,
+          `Unable to determine OpenCode version from \`opencode --version\` output. Azure Code requires OpenCode v${MINIMUM_OPENCODE_VERSION} or newer.`,
         ),
         null,
       );
@@ -429,12 +477,16 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
     customModels,
     DEFAULT_OPENCODE_MODEL_CAPABILITIES,
   );
-  const connectedCount = inventoryExit.value.providerList.connected.length;
+  const skills = openCodeSkills(inventoryExit.value);
+  const slashCommands = openCodeSlashCommands(inventoryExit.value);
+  const connectedCount = connectedOpenCodeProviderIds(inventoryExit.value).length;
   return buildServerProvider({
     presentation: OPENCODE_PRESENTATION,
     enabled: true,
     checkedAt,
     models,
+    slashCommands,
+    skills,
     probe: {
       installed: true,
       version,

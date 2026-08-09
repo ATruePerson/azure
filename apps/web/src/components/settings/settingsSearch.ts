@@ -3,6 +3,7 @@ export type SettingsPath =
   | "/settings/appearance"
   | "/settings/keybindings"
   | "/settings/providers"
+  | "/settings/capabilities"
   | "/settings/source-control"
   | "/settings/connections"
   | "/settings/archived";
@@ -23,6 +24,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/appearance": "Appearance",
   "/settings/keybindings": "Keybindings",
   "/settings/providers": "Providers",
+  "/settings/capabilities": "Capabilities",
   "/settings/source-control": "Source Control",
   "/settings/connections": "Connections",
   "/settings/archived": "Archive",
@@ -178,6 +180,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "providers",
     title: "Providers",
     to: "/settings/providers",
+  },
+  {
+    id: "capabilities",
+    title: "Capabilities",
+    to: "/settings/capabilities",
   },
   {
     id: "source-control",

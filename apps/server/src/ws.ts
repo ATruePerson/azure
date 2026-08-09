@@ -16,6 +16,7 @@ import {
   type AuthEnvironmentScope,
   AuthSessionId,
   CommandId,
+  CodexCapabilitiesError,
   type DiscoveredLocalServerList,
   EventId,
   type OrchestrationCommand,
@@ -79,6 +80,13 @@ import {
   observeRpcStreamEffect as instrumentRpcStreamEffect,
 } from "./observability/RpcInstrumentation.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
+import {
+  loadCodexCapabilities,
+  resolveCodexCapabilitiesTarget,
+  setCodexConfigEnabled,
+  setCodexSkillEnabled,
+} from "./provider/Layers/CodexProvider.ts";
+import { deriveProviderInstanceConfigMap } from "./provider/Layers/ProviderInstanceRegistryHydration.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
@@ -1481,6 +1489,69 @@ const makeWsRpcLayer = (
             {
               "rpc.aggregate": "server",
             },
+          ),
+        [WS_METHODS.serverGetCodexCapabilities]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverGetCodexCapabilities,
+            Effect.gen(function* () {
+              const settings = yield* serverSettings.getSettings;
+              const target = yield* resolveCodexCapabilitiesTarget(
+                deriveProviderInstanceConfigMap(settings)[input.instanceId],
+              );
+              return yield* loadCodexCapabilities({
+                settings: target.settings,
+                cwd: config.cwd,
+                environment: target.environment,
+              });
+            }).pipe(
+              Effect.mapError((cause) => new CodexCapabilitiesError({ cause })),
+              Effect.scoped,
+            ),
+            { "rpc.aggregate": "server" },
+          ),
+        [WS_METHODS.serverSetCodexSkillEnabled]: (skill) =>
+          observeRpcEffect(
+            WS_METHODS.serverSetCodexSkillEnabled,
+            Effect.gen(function* () {
+              const settings = yield* serverSettings.getSettings;
+              const target = yield* resolveCodexCapabilitiesTarget(
+                deriveProviderInstanceConfigMap(settings)[skill.instanceId],
+              );
+              return yield* setCodexSkillEnabled({
+                settings: target.settings,
+                cwd: config.cwd,
+                skill: { path: skill.path, enabled: skill.enabled },
+                environment: target.environment,
+              });
+            }).pipe(
+              Effect.mapError((cause) => new CodexCapabilitiesError({ cause })),
+              Effect.scoped,
+            ),
+            { "rpc.aggregate": "server" },
+          ),
+        [WS_METHODS.serverSetCodexConfigEnabled]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverSetCodexConfigEnabled,
+            Effect.gen(function* () {
+              const settings = yield* serverSettings.getSettings;
+              const target = yield* resolveCodexCapabilitiesTarget(
+                deriveProviderInstanceConfigMap(settings)[input.instanceId],
+              );
+              return yield* setCodexConfigEnabled({
+                settings: target.settings,
+                cwd: config.cwd,
+                config: {
+                  kind: input.kind,
+                  id: input.id,
+                  enabled: input.enabled,
+                },
+                environment: target.environment,
+              });
+            }).pipe(
+              Effect.mapError((cause) => new CodexCapabilitiesError({ cause })),
+              Effect.scoped,
+            ),
+            { "rpc.aggregate": "server" },
           ),
         [WS_METHODS.serverUpdateSettings]: ({ patch }) =>
           observeRpcEffect(

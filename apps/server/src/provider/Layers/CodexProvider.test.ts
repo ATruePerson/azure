@@ -1,10 +1,99 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  ProviderDriverKind,
+  ProviderInstanceId,
+} from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
+import * as CodexClient from "effect-codex-app-server/client";
 
 import {
   applyPreferredCodexDefaultModel,
   isLegacyCodexModel,
   mapCodexModelCapabilities,
+  requestCodexCapabilities,
+  resolveCodexCapabilitiesTarget,
+  setCodexConfigEnabledWithClient,
+  setCodexSkillEnabledWithClient,
 } from "./CodexProvider.ts";
+import { deriveProviderInstanceConfigMap } from "./ProviderInstanceRegistryHydration.ts";
+
+interface CapabilityRequest {
+  readonly method: string;
+  readonly payload: unknown;
+}
+
+function makeCapabilityClient(calls: Array<CapabilityRequest>) {
+  const responses: Readonly<Record<string, unknown>> = {
+    "config/read": {
+      config: {
+        mcp_servers: {
+          disabled: { enabled: false },
+          enabled: { enabled: true },
+        },
+      },
+      origins: {},
+    },
+    "hooks/list": {
+      data: [
+        {
+          hooks: [
+            {
+              key: "stop-hook",
+              eventName: "stop",
+              handlerType: "command",
+              source: "user",
+              enabled: true,
+            },
+          ],
+        },
+      ],
+    },
+    "plugin/installed": {
+      marketplaces: [
+        {
+          name: "curated",
+          plugins: [
+            {
+              id: "github@openai-curated",
+              name: "GitHub",
+              enabled: true,
+              installed: true,
+            },
+          ],
+        },
+      ],
+    },
+    "skills/list": {
+      data: [
+        {
+          skills: [
+            {
+              path: "/skills/test/SKILL.md",
+              name: "test-skill",
+              scope: "user",
+              enabled: true,
+            },
+          ],
+        },
+      ],
+    },
+    "mcpServerStatus/list": {
+      data: [
+        { name: "enabled", authStatus: "notLoggedIn", serverInfo: { name: "Enabled MCP" } },
+        { name: "managed", authStatus: "notLoggedIn", serverInfo: { name: "Managed MCP" } },
+      ],
+    },
+  };
+
+  return {
+    request: (method: string, payload: unknown) => {
+      calls.push({ method, payload });
+      return Effect.succeed(responses[method] ?? {});
+    },
+  } as unknown as CodexClient.CodexAppServerClient["Service"];
+}
 
 it("keeps only the GPT-5.6 Codex family out of legacy models", () => {
   assert.deepStrictEqual(
@@ -162,4 +251,96 @@ it("ignores custom models that shadow a preferred slug", () => {
   ]);
 
   assert.deepStrictEqual(models.find((model) => model.isDefault)?.slug, "gpt-5.4");
+});
+
+it.layer(NodeServices.layer)("Codex capability controls", (it) => {
+  it.effect("uses the selected instance's shadow home and environment", () =>
+    Effect.gen(function* () {
+      const instanceId = ProviderInstanceId.make("codex");
+      const instances = deriveProviderInstanceConfigMap({
+        ...DEFAULT_SERVER_SETTINGS,
+        providerInstances: {
+          [instanceId]: {
+            driver: ProviderDriverKind.make("codex"),
+            environment: [{ name: "CODEX_CAPABILITY_TEST", value: "work", sensitive: false }],
+            config: {
+              homePath: "/shared-codex-home",
+              shadowHomePath: "/shadow-codex-home",
+            },
+          },
+        },
+      });
+      const target = yield* resolveCodexCapabilitiesTarget(instances[instanceId]);
+
+      assert.strictEqual(target.settings.homePath, "/shadow-codex-home");
+      assert.strictEqual(target.environment.CODEX_CAPABILITY_TEST, "work");
+    }),
+  );
+
+  it.effect("loads all inventories and writes each supported individual control", () =>
+    Effect.gen(function* () {
+      const calls: Array<CapabilityRequest> = [];
+      const client = makeCapabilityClient(calls);
+      const capabilities = yield* requestCodexCapabilities(client, "/workspace");
+
+      assert.deepStrictEqual(
+        capabilities.mcpServers.map(({ id, enabled, canToggle }) => ({ id, enabled, canToggle })),
+        [
+          { id: "disabled", enabled: false, canToggle: true },
+          { id: "enabled", enabled: true, canToggle: true },
+          { id: "managed", enabled: true, canToggle: false },
+        ],
+      );
+      assert.strictEqual(capabilities.hooks[0]?.canToggle, false);
+      assert.deepStrictEqual(calls.find((call) => call.method === "config/read")?.payload, {
+        includeLayers: false,
+      });
+
+      yield* setCodexSkillEnabledWithClient(client, "/workspace", {
+        path: "/skills/test/SKILL.md",
+        enabled: false,
+      });
+      yield* setCodexConfigEnabledWithClient(client, "/workspace", {
+        kind: "plugin",
+        id: "github@openai-curated",
+        enabled: false,
+      });
+      yield* setCodexConfigEnabledWithClient(client, "/workspace", {
+        kind: "mcp",
+        id: "enabled",
+        enabled: false,
+      });
+
+      assert.deepStrictEqual(
+        calls.filter((call) =>
+          ["skills/config/write", "config/value/write", "config/mcpServer/reload"].includes(
+            call.method,
+          ),
+        ),
+        [
+          {
+            method: "skills/config/write",
+            payload: { path: "/skills/test/SKILL.md", enabled: false },
+          },
+          {
+            method: "config/value/write",
+            payload: {
+              keyPath: "plugins.github@openai-curated.enabled",
+              mergeStrategy: "replace",
+              value: false,
+            },
+          },
+          {
+            method: "config/value/write",
+            payload: {
+              keyPath: "mcp_servers.enabled.enabled",
+              mergeStrategy: "replace",
+              value: false,
+            },
+          },
+          { method: "config/mcpServer/reload", payload: undefined },
+        ],
+      );
+    }),
+  );
 });

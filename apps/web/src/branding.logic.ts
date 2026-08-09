@@ -4,11 +4,7 @@ export function formatAppDisplayName(input: {
   readonly baseName: string;
   readonly stageLabel: string;
 }): string {
-  if (input.stageLabel.trim().toLowerCase() === "latest") {
-    return input.baseName;
-  }
-
-  return `${input.baseName} (${input.stageLabel})`;
+  return input.baseName;
 }
 
 export function resolveServerBackedAppStageLabel(input: {
@@ -32,7 +28,5 @@ export function resolveServerBackedAppDisplayName(input: {
     fallbackStageLabel: input.fallbackStageLabel,
   });
 
-  return stageLabel === input.fallbackStageLabel
-    ? input.fallbackDisplayName
-    : formatAppDisplayName({ baseName: input.baseName, stageLabel });
+  return formatAppDisplayName({ baseName: input.baseName, stageLabel });
 }

@@ -6,6 +6,8 @@ import {
   ClientSettingsSchema,
   ClientSettingsPatch,
   DEFAULT_SERVER_SETTINGS,
+  NVIDIA_NIM_DEFAULT_BASE_URL,
+  OPENROUTER_DEFAULT_BASE_URL,
   ServerSettings,
   ServerSettingsPatch,
 } from "./settings.ts";
@@ -122,6 +124,22 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
     // Legacy `providers` struct is still hydrated with its per-driver defaults
     // so existing call sites keep working through the migration.
     expect(decoded.providers.codex.enabled).toBe(true);
+    expect(decoded.providers.nvidiaNim.baseUrl).toBe(NVIDIA_NIM_DEFAULT_BASE_URL);
+    expect(decoded.providers.openrouter.baseUrl).toBe(OPENROUTER_DEFAULT_BASE_URL);
+  });
+
+  it("accepts base URL patches for first-party HTTP providers", () => {
+    expect(
+      decodeServerSettingsPatch({
+        providers: {
+          nvidiaNim: { baseUrl: "https://nim.example/v1" },
+          openrouter: { baseUrl: "https://router.example/v1" },
+        },
+      }).providers,
+    ).toEqual({
+      nvidiaNim: { baseUrl: "https://nim.example/v1" },
+      openrouter: { baseUrl: "https://router.example/v1" },
+    });
   });
 
   it("decodes a multi-instance map mixing first-party and fork drivers", () => {
