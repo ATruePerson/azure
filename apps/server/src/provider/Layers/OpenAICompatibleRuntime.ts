@@ -24,7 +24,10 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
 
-import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
+import type {
+  ProviderAdapterShape,
+  ProviderContextCompactionResult,
+} from "../Services/ProviderAdapter.ts";
 import { resolveModelContextWindow } from "@t3tools/shared/model";
 import { ProviderAdapterSessionNotFoundError, ProviderAdapterValidationError } from "../Errors.ts";
 
@@ -579,16 +582,22 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
     turnId: TurnId,
     model: string | undefined,
     additionalMessage?: Message,
+    settings?: {
+      readonly contextModel?: string;
+      readonly contextOptions?: ReadonlyArray<ProviderOptionSelection>;
+    },
   ): Effect.Effect<boolean, OpenAICompatibleError> =>
     Effect.gen(function* () {
-      const discoveredContextWindow = contextWindowTokensByModel.get(model ?? "");
+      const contextModel = settings?.contextModel ?? model;
+      const discoveredContextWindow = contextWindowTokensByModel.get(contextModel ?? "");
       const maximum = resolveModelContextWindow({
         provider: options.provider,
-        model,
+        model: contextModel,
         ...(discoveredContextWindow !== undefined ? { discovered: discoveredContextWindow } : {}),
       });
       if (!maximum) return false;
-      const selectedMaxOutput = optionNumber(state.modelOptions, "maxOutputTokens") ?? 16_384;
+      const selectedMaxOutput =
+        optionNumber(settings?.contextOptions ?? state.modelOptions, "maxOutputTokens") ?? 16_384;
       const threshold = Math.min(
         Math.floor(maximum * 0.99),
         Math.max(1, maximum - selectedMaxOutput - 1_024),
@@ -596,7 +605,14 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
       const projected = estimatedTokens(
         additionalMessage ? [...state.messages, additionalMessage] : state.messages,
       );
-      if (projected < threshold || state.messages.length <= 8) return false;
+      if (projected < threshold) return false;
+      if (state.messages.length <= 8) {
+        return yield* new ProviderAdapterValidationError({
+          provider: String(options.provider),
+          operation: "context.compact",
+          issue: "The selected model cannot fit this context without dropping a complete turn.",
+        });
+      }
 
       let keepStart = Math.max(0, state.messages.length - 8);
       while (keepStart > 0 && state.messages[keepStart]?.role === "tool") keepStart -= 1;
@@ -660,13 +676,24 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
       state.contextUsedTokens = estimatedTokens(state.messages);
       yield* emit({
         ...makeEventBase(options.provider, threadId, ++eventNumber, turnId),
+        type: "thread.state.changed",
+        payload: {
+          state: "compacted",
+          detail: { compactedThrough: String(state.compactedThrough ?? turnId) },
+        },
+      });
+      // Keep the item-level signal for older consumers; orchestration uses the
+      // canonical thread-state event above so this cannot create a duplicate
+      // visible work-log entry.
+      yield* emit({
+        ...makeEventBase(options.provider, threadId, ++eventNumber, turnId),
         itemId: RuntimeItemId.make(`compaction:${String(turnId)}`),
         type: "item.completed",
         payload: {
           itemType: "context_compaction",
           status: "completed",
           title: "Context compacted",
-          data: { compactedThrough: String(state.compactedThrough ?? turnId), summary },
+          data: { compactedThrough: String(state.compactedThrough ?? turnId) },
         },
       });
       return true;
@@ -1134,6 +1161,40 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
       return { threadId: input.threadId, turnId } satisfies ProviderTurnStartResult;
     });
 
+  const compactContext: NonNullable<OpenAICompatibleAdapter["compactContext"]> = (input) =>
+    Effect.gen(function* () {
+      const state = yield* getSession(input.threadId);
+      if (state.activeTurnId !== undefined) {
+        return yield* new ProviderAdapterValidationError({
+          provider: String(options.provider),
+          operation: "compactContext",
+          issue: "Cannot compact while a turn is running.",
+        });
+      }
+      const turnId = yield* nextTurnId;
+      const compacted = yield* compactBeforeTurn(
+        state,
+        input.threadId,
+        turnId,
+        state.session.model,
+        undefined,
+        {
+          contextModel: input.targetModelSelection.model,
+          ...(input.targetModelSelection.options !== undefined
+            ? { contextOptions: input.targetModelSelection.options }
+            : {}),
+        },
+      );
+      const result: ProviderContextCompactionResult = compacted
+        ? {
+            outcome: "compacted",
+            resumeCursor: state.session.resumeCursor,
+            ...(state.compactedThrough ? { compactedThrough: state.compactedThrough } : {}),
+          }
+        : { outcome: "not-needed", resumeCursor: state.session.resumeCursor };
+      return result;
+    });
+
   const sendToolResult = (input: OpenAICompatibleToolResultInput) =>
     Effect.gen(function* () {
       const state = yield* getSession(input.threadId);
@@ -1170,9 +1231,13 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
 
   const adapter: OpenAICompatibleAdapter = {
     provider: options.provider,
-    capabilities: { sessionModelSwitch: "unsupported" },
+    capabilities: {
+      sessionModelSwitch: "in-session",
+      manualContextCompaction: "azure-summary",
+    },
     startSession,
     sendTurn,
+    compactContext,
     sendToolResult,
     listModels,
     interruptTurn: (threadId, turnId) =>

@@ -365,8 +365,17 @@ export function makeOpenAICompatibleDriver<Settings extends CompatibleSettings>(
             detail: "OpenAI-compatible provider request failed.",
           });
         };
+        const { compactContext: rawCompactContext, ...rawAdapterWithoutCompactContext } =
+          rawAdapter;
+        const wrappedCompactContext: ProviderAdapterShape<ProviderAdapterError>["compactContext"] =
+          rawCompactContext === undefined
+            ? undefined
+            : (input) =>
+                rawCompactContext(input).pipe(
+                  Effect.mapError((cause) => toProviderAdapterError("compactContext", cause)),
+                );
         const adapter: ProviderAdapterShape<ProviderAdapterError> = {
-          ...rawAdapter,
+          ...rawAdapterWithoutCompactContext,
           startSession: (input) =>
             rawAdapter
               .startSession(input)
@@ -375,6 +384,7 @@ export function makeOpenAICompatibleDriver<Settings extends CompatibleSettings>(
             rawAdapter
               .sendTurn(input)
               .pipe(Effect.mapError((cause) => toProviderAdapterError("sendTurn", cause))),
+          ...(wrappedCompactContext !== undefined ? { compactContext: wrappedCompactContext } : {}),
           interruptTurn: (threadId, turnId) =>
             rawAdapter
               .interruptTurn(threadId, turnId)

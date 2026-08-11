@@ -23,13 +23,17 @@ import type {
   ProviderStopSessionInput,
   ThreadId,
   ProviderTurnStartResult,
+  ModelSelection,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
 
 import type { ProviderServiceError } from "../Errors.ts";
-import type { ProviderAdapterCapabilities } from "./ProviderAdapter.ts";
+import type {
+  ProviderAdapterCapabilities,
+  ProviderContextCompactionResult,
+} from "./ProviderAdapter.ts";
 import type { ProviderInstanceRoutingInfo } from "./ProviderAdapterRegistry.ts";
 
 /**
@@ -50,6 +54,12 @@ export interface ProviderServiceShape {
   readonly sendTurn: (
     input: ProviderSendTurnInput,
   ) => Effect.Effect<ProviderTurnStartResult, ProviderServiceError>;
+
+  readonly compactContext?: (input: {
+    readonly threadId: ThreadId;
+    readonly targetModelSelection: ModelSelection;
+    readonly reason: "model-switch";
+  }) => Effect.Effect<ProviderContextCompactionResult, ProviderServiceError>;
 
   /**
    * Interrupt a running provider turn.

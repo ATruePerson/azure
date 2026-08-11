@@ -378,6 +378,40 @@ const make = Effect.gen(function* () {
       ),
     );
 
+  const appendModelChangedActivity = (input: {
+    readonly threadId: ThreadId;
+    readonly previousModelSelection: ModelSelection;
+    readonly nextModelSelection: ModelSelection;
+    readonly handoff: "compacted" | "full-context";
+    readonly createdAt: string;
+  }) =>
+    Effect.all({
+      commandId: serverCommandId("model-changed-activity"),
+      eventId: serverEventId(),
+    }).pipe(
+      Effect.flatMap(({ commandId, eventId }) =>
+        orchestrationEngine.dispatch({
+          type: "thread.activity.append",
+          commandId,
+          threadId: input.threadId,
+          activity: {
+            id: eventId,
+            tone: "info",
+            kind: "model.changed",
+            summary: `Model changed from ${input.previousModelSelection.model} to ${input.nextModelSelection.model}`,
+            payload: {
+              previousModelSelection: input.previousModelSelection,
+              nextModelSelection: input.nextModelSelection,
+              handoff: input.handoff,
+            },
+            turnId: null,
+            createdAt: input.createdAt,
+          },
+          createdAt: input.createdAt,
+        }),
+      ),
+    );
+
   const formatFailureDetail = (cause: Cause.Cause<unknown>): string => {
     const failReason = cause.reasons.find(Cause.isFailReason);
     const providerError = isProviderAdapterRequestError(failReason?.error)
@@ -679,11 +713,41 @@ const make = Effect.gen(function* () {
         preferredProvider === "claudeAgent" &&
         requestedModelSelection !== undefined &&
         !Equal.equals(previousModelSelection, requestedModelSelection);
+      let modelHandoff: "compacted" | "full-context" | undefined;
+
+      if (modelChanged && requestedModelSelection !== undefined) {
+        const capabilities = yield* providerService.getCapabilities(currentInstanceId);
+        const compactionMode = capabilities.manualContextCompaction;
+        if (compactionMode === "unsupported") {
+          return yield* new ProviderAdapterRequestError({
+            provider: providerErrorLabel(activeSession?.provider ?? preferredProvider),
+            method: "context.compact",
+            detail:
+              "This provider cannot preserve the current context while changing models. Start a new thread.",
+          });
+        }
+        if (compactionMode !== undefined) {
+          if (providerService.compactContext === undefined) {
+            return yield* new ProviderAdapterRequestError({
+              provider: providerErrorLabel(activeSession?.provider ?? preferredProvider),
+              method: "context.compact",
+              detail: "Context handoff is unavailable in this runtime.",
+            });
+          }
+          const compaction = yield* providerService.compactContext({
+            threadId,
+            targetModelSelection: desiredModelSelection,
+            reason: "model-switch",
+          });
+          modelHandoff = compaction.outcome === "compacted" ? "compacted" : "full-context";
+        }
+      }
 
       if (
         !runtimeModeChanged &&
         !cwdChanged &&
         !instanceChanged &&
+        !modelChanged &&
         !shouldRestartForModelChange &&
         !shouldRestartForModelSelectionChange
       ) {
@@ -724,6 +788,26 @@ const make = Effect.gen(function* () {
         cwd: restartedSession.cwd,
       });
       yield* bindSessionToThread(restartedSession);
+      if (modelChanged && requestedModelSelection !== undefined) {
+        const previousModelSelection: ModelSelection = {
+          ...thread.modelSelection,
+          instanceId: currentInstanceId,
+          model: activeSession?.model ?? thread.modelSelection.model,
+        };
+        yield* orchestrationEngine.dispatch({
+          type: "thread.meta.update",
+          commandId: yield* serverCommandId("model-switch-commit"),
+          threadId,
+          modelSelection: desiredModelSelection,
+        });
+        yield* appendModelChangedActivity({
+          threadId,
+          previousModelSelection,
+          nextModelSelection: desiredModelSelection,
+          handoff: modelHandoff ?? "full-context",
+          createdAt,
+        });
+      }
       return restartedSession.threadId;
     }
 

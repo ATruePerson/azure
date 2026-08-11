@@ -11,6 +11,7 @@ import type {
   ApprovalRequestId,
   ProviderApprovalDecision,
   ProviderDriverKind,
+  ModelSelection,
   ProviderUserInputAnswers,
   ProviderRuntimeEvent,
   ProviderSendTurnInput,
@@ -25,11 +26,26 @@ import type * as Stream from "effect/Stream";
 
 export type ProviderSessionModelSwitchMode = "in-session" | "unsupported";
 
+export type ProviderManualContextCompaction = "azure-summary" | "native" | "unsupported";
+
+export type ProviderContextCompactionResult =
+  | {
+      readonly outcome: "compacted";
+      readonly resumeCursor?: unknown;
+      readonly compactedThrough?: TurnId;
+    }
+  | {
+      readonly outcome: "not-needed";
+      readonly resumeCursor?: unknown;
+    };
+
 export interface ProviderAdapterCapabilities {
   /**
    * Declares whether changing the model on an existing session is supported.
    */
   readonly sessionModelSwitch: ProviderSessionModelSwitchMode;
+  /** Whether this adapter can compact before a model switch. */
+  readonly manualContextCompaction?: ProviderManualContextCompaction;
 }
 
 export interface ProviderThreadTurnSnapshot {
@@ -62,6 +78,13 @@ export interface ProviderAdapterShape<TError> {
   readonly sendTurn: (
     input: ProviderSendTurnInput,
   ) => Effect.Effect<ProviderTurnStartResult, TError>;
+
+  /** Compact provider context before changing the active model. */
+  readonly compactContext?: (input: {
+    readonly threadId: ThreadId;
+    readonly targetModelSelection: ModelSelection;
+    readonly reason: "model-switch";
+  }) => Effect.Effect<ProviderContextCompactionResult, TError>;
 
   /**
    * Interrupt an active turn.

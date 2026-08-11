@@ -50,7 +50,11 @@ import {
   providerTurnMetricAttributes,
   withMetrics,
 } from "../../observability/Metrics.ts";
-import { type ProviderAdapterError, ProviderValidationError } from "../Errors.ts";
+import {
+  ProviderAdapterRequestError,
+  type ProviderAdapterError,
+  ProviderValidationError,
+} from "../Errors.ts";
 import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
 import * as ProviderAdapterRegistry from "../Services/ProviderAdapterRegistry.ts";
 import * as ProviderService from "../Services/ProviderService.ts";
@@ -945,6 +949,36 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     );
   });
 
+  const compactContext: ProviderServiceMethod<"compactContext"> = Effect.fn("compactContext")(
+    function* (input) {
+      const routed = yield* resolveRoutableSession({
+        threadId: input.threadId,
+        operation: "ProviderService.compactContext",
+        allowRecovery: true,
+      });
+      if (routed.adapter.compactContext === undefined) {
+        return yield* new ProviderAdapterRequestError({
+          provider: String(routed.adapter.provider),
+          method: "context.compact",
+          detail: "This provider does not expose manual context compaction.",
+        });
+      }
+      const result = yield* routed.adapter.compactContext(input);
+      const session = yield* routed.adapter
+        .listSessions()
+        .pipe(
+          Effect.map((sessions) => sessions.find((entry) => entry.threadId === input.threadId)),
+        );
+      if (session) {
+        yield* upsertSessionBinding(
+          { ...session, providerInstanceId: routed.instanceId },
+          input.threadId,
+        );
+      }
+      return result;
+    },
+  );
+
   const interruptTurn: ProviderServiceMethod<"interruptTurn"> = Effect.fn("interruptTurn")(
     function* (rawInput) {
       const input = yield* decodeInputOrValidationError({
@@ -1300,6 +1334,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   return {
     startSession,
     sendTurn,
+    compactContext,
     interruptTurn,
     respondToRequest,
     respondToUserInput,
