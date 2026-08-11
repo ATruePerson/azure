@@ -73,6 +73,7 @@ export type ProviderDriverKind = typeof ProviderDriverKind.Type;
 export const PROVIDER_API_KEY_ENVIRONMENT_BY_DRIVER: Partial<Record<ProviderDriverKind, string>> = {
   [ProviderDriverKind.make("nvidiaNim")]: "NVIDIA_API_KEY",
   [ProviderDriverKind.make("openrouter")]: "OPENROUTER_API_KEY",
+  [ProviderDriverKind.make("opencodeZen")]: "OPENCODE_ZEN_API_KEY",
 };
 
 const isProviderDriverKindValue = Schema.is(ProviderDriverKind);

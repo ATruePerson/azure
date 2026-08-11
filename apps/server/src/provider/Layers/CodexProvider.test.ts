@@ -10,6 +10,7 @@ import * as CodexClient from "effect-codex-app-server/client";
 
 import {
   applyPreferredCodexDefaultModel,
+  codexCapabilityFailureCategory,
   isLegacyCodexModel,
   mapCodexModelCapabilities,
   requestCodexCapabilities,
@@ -23,6 +24,10 @@ interface CapabilityRequest {
   readonly method: string;
   readonly payload: unknown;
 }
+
+it("classifies capability failures without exposing their detail", () => {
+  assert.equal(codexCapabilityFailureCategory(new Error("secret value")), "requestFailed");
+});
 
 function makeCapabilityClient(calls: Array<CapabilityRequest>) {
   const responses: Readonly<Record<string, unknown>> = {

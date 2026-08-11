@@ -3,6 +3,16 @@ import * as Schema from "effect/Schema";
 import { ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 const ASSET_PATH_MAX_LENGTH = 1024;
+const CAPABILITY_ID = TrimmedNonEmptyString.check(
+  Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/),
+);
+const AzureCapabilityIconFields = {
+  category: Schema.Literals(["hooks", "plugins", "skills", "mcp"]),
+  id: CAPABILITY_ID,
+} as const;
+
+export const AzureCapabilityIcon = Schema.Struct(AzureCapabilityIconFields);
+export type AzureCapabilityIcon = typeof AzureCapabilityIcon.Type;
 
 export const AssetResource = Schema.Union([
   Schema.TaggedStruct("workspace-file", {
@@ -15,6 +25,7 @@ export const AssetResource = Schema.Union([
   Schema.TaggedStruct("project-favicon", {
     cwd: TrimmedNonEmptyString.check(Schema.isMaxLength(ASSET_PATH_MAX_LENGTH)),
   }),
+  Schema.TaggedStruct("azure-capability-icon", AzureCapabilityIconFields),
 ]);
 export type AssetResource = typeof AssetResource.Type;
 

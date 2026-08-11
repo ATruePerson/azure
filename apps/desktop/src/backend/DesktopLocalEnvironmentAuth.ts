@@ -71,7 +71,7 @@ export const make = Effect.gen(function* () {
           httpBaseUrl: config.httpBaseUrl.href,
           credential,
           clientMetadata: {
-            label: "Azure Code Desktop",
+            label: "Azure Desktop",
             deviceType: "desktop",
           },
         }).pipe(

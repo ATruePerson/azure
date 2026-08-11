@@ -15,6 +15,7 @@ import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { BUILT_IN_DRIVERS } from "../builtInDrivers.ts";
 import { NvidiaNimDriver } from "./NvidiaNimDriver.ts";
+import { OpenCodeZenDriver } from "./OpenCodeZenDriver.ts";
 import { OpenRouterDriver } from "./OpenRouterDriver.ts";
 
 function json(value: unknown, status = 200): Response {
@@ -57,17 +58,18 @@ const backgroundPolicy: BackgroundPolicy.BackgroundPolicy["Service"] = {
 };
 
 function makeInstance(
-  driver: typeof NvidiaNimDriver | typeof OpenRouterDriver,
+  driver: typeof NvidiaNimDriver | typeof OpenCodeZenDriver | typeof OpenRouterDriver,
   environment: ReadonlyArray<{ name: string; value: string }>,
   client: HttpClient.HttpClient,
   config: Record<string, unknown> = {},
+  enabled = true,
 ) {
   return driver
     .create({
       instanceId: ProviderInstanceId.make(driver.driverKind),
       displayName: undefined,
       environment: environment.map((entry) => ({ ...entry, sensitive: true })),
-      enabled: true,
+      enabled,
       config: { ...driver.defaultConfig(), ...config },
     })
     .pipe(
@@ -83,12 +85,12 @@ function makeInstance(
 }
 
 describe("OpenAI-compatible drivers", () => {
-  it("registers both first-class driver ids", () => {
+  it("registers first-class API-key driver ids", () => {
     assert.deepStrictEqual(
       BUILT_IN_DRIVERS.map((driver) => String(driver.driverKind)).filter((kind) =>
-        ["nvidiaNim", "openrouter"].includes(kind),
+        ["nvidiaNim", "openrouter", "opencodeZen"].includes(kind),
       ),
-      ["nvidiaNim", "openrouter"],
+      ["nvidiaNim", "openrouter", "opencodeZen"],
     );
   });
 
@@ -98,11 +100,28 @@ describe("OpenAI-compatible drivers", () => {
       const instance = yield* makeInstance(
         NvidiaNimDriver,
         [{ name: "NVIDIA_API_KEY", value: "nvidia-secret" }],
-        clientFor((request) => json({ data: [{ id: "nvidia/model-a" }] }), requests),
+        clientFor(
+          (request) =>
+            json({
+              data: [{ id: "nvidia/model-a" }, { id: "nvidia/nemotron-3-ultra-550b-a55b" }],
+            }),
+          requests,
+        ),
       );
       const healthy = yield* instance.snapshot.refresh;
       assert.equal(healthy.auth.status, "authenticated");
+      assert.equal(healthy.message, "NVIDIA authenticated via API key.");
       assert.equal(healthy.models[0]?.slug, "nvidia/model-a");
+      assert.equal(healthy.models[1]?.capabilities?.contextWindowTokens, 1_000_000);
+      const nvidiaReasoning = healthy.models[1]?.capabilities?.optionDescriptors?.[0];
+      assert.equal(nvidiaReasoning?.type, "select");
+      if (nvidiaReasoning?.type === "select") {
+        assert.deepStrictEqual(nvidiaReasoning.options, [
+          { id: "none", label: "None" },
+          { id: "medium", label: "Medium" },
+          { id: "high", label: "High", isDefault: true },
+        ]);
+      }
       assert.equal(requests[0]?.url, "https://integrate.api.nvidia.com/v1/models");
 
       const unauthorized = yield* makeInstance(
@@ -112,6 +131,31 @@ describe("OpenAI-compatible drivers", () => {
       ).pipe(Effect.flatMap((created) => created.snapshot.refresh));
       assert.equal(unauthorized.auth.status, "unauthenticated");
       assert.notInclude(String(unauthorized), "nvidia-secret");
+    }),
+  );
+
+  it.effect("keeps OpenCode Zen credentials separate from the local OpenCode driver", () =>
+    Effect.gen(function* () {
+      const requests: Request[] = [];
+      const instance = yield* makeInstance(
+        OpenCodeZenDriver,
+        [{ name: "OPENCODE_ZEN_API_KEY", value: "zen-secret" }],
+        clientFor((request) => json({ data: [{ id: "zen/model-a" }] }), requests),
+      );
+      const healthy = yield* instance.snapshot.refresh;
+      assert.equal(healthy.auth.status, "authenticated");
+      assert.equal(healthy.models[0]?.slug, "zen/model-a");
+      assert.equal(requests[0]?.url, "https://opencode.ai/zen/v1/models");
+      assert.notInclude(String(healthy), "zen-secret");
+
+      const disabled = yield* makeInstance(
+        NvidiaNimDriver,
+        [],
+        clientFor(() => json({}), []),
+        {},
+        false,
+      ).pipe(Effect.flatMap((created) => created.snapshot.refresh));
+      assert.equal(disabled.message, "NVIDIA is disabled in Azure settings.");
     }),
   );
 
@@ -125,13 +169,34 @@ describe("OpenAI-compatible drivers", () => {
           (request) =>
             request.url.endsWith("/key")
               ? json({ data: { label: "Azure Code" } })
-              : json({ data: [{ id: "openai/model-a", name: "Model A" }] }),
+              : json({
+                  data: [
+                    {
+                      id: "openai/model-a",
+                      name: "Model A",
+                      context_length: 262_144,
+                      reasoning: {
+                        supported_efforts: ["low", "high"],
+                        default_effort: "high",
+                      },
+                    },
+                  ],
+                }),
           requests,
         ),
       );
       const snapshot = yield* instance.snapshot.refresh;
       assert.equal(snapshot.auth.status, "authenticated");
       assert.equal(snapshot.models[0]?.slug, "openai/model-a");
+      assert.equal(snapshot.models[0]?.capabilities?.contextWindowTokens, 262_144);
+      const routerThinking = snapshot.models[0]?.capabilities?.optionDescriptors?.[0];
+      assert.equal(routerThinking?.type, "select");
+      if (routerThinking?.type === "select") {
+        assert.deepStrictEqual(routerThinking.options, [
+          { id: "low", label: "Low" },
+          { id: "high", label: "High", isDefault: true },
+        ]);
+      }
       assert.equal(requests[0]?.url, "https://openrouter.ai/api/v1/key");
       assert.equal(requests[0]?.headers.get("X-OpenRouter-Title"), "Azure Code");
       assert.isNull(requests[0]?.headers.get("Referer"));

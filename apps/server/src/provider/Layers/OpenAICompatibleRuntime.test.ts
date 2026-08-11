@@ -10,7 +10,12 @@ import {
   HttpClientResponse,
 } from "effect/unstable/http";
 import { describe } from "vite-plus/test";
-import { ProviderDriverKind, ThreadId, type ProviderRuntimeEvent } from "@t3tools/contracts";
+import {
+  ProviderDriverKind,
+  ProviderInstanceId,
+  ThreadId,
+  type ProviderRuntimeEvent,
+} from "@t3tools/contracts";
 
 import {
   makeOpenAICompatibleAdapter,
@@ -106,7 +111,7 @@ describe("OpenAICompatibleRuntime", () => {
       assert.deepStrictEqual(models[0], { id: "model-a", owned_by: "local" });
       yield* adapter.startSession(startInput("text"));
       yield* adapter.sendTurn({ threadId: thread("text"), input: "hello" });
-      const events = yield* Stream.runCollect(Stream.take(adapter.streamEvents, 6));
+      const events = yield* Stream.runCollect(Stream.take(adapter.streamEvents, 7));
       const deltas = events
         .filter(
           (event): event is Extract<ProviderRuntimeEvent, { type: "content.delta" }> =>
@@ -114,6 +119,19 @@ describe("OpenAICompatibleRuntime", () => {
         )
         .map((event) => event.payload.delta);
       assert.deepStrictEqual(deltas, ["think", "hello"]);
+      const usage = events.find((event) => event.type === "thread.token-usage.updated");
+      assert.equal(usage?.type, "thread.token-usage.updated");
+      if (usage?.type === "thread.token-usage.updated") {
+        assert.deepStrictEqual(usage.payload.usage, {
+          usedTokens: 5,
+          totalProcessedTokens: 5,
+          inputTokens: 2,
+          lastInputTokens: 2,
+          outputTokens: 3,
+          lastOutputTokens: 3,
+          lastUsedTokens: 5,
+        });
+      }
       const completed = events.at(-1);
       assert.equal(completed?.type, "turn.completed");
       if (completed?.type === "turn.completed") {
@@ -185,6 +203,222 @@ describe("OpenAICompatibleRuntime", () => {
     }),
   );
 
+  it.effect("reconfigures an idle session without losing its conversation", () =>
+    Effect.gen(function* () {
+      const bodies: string[] = [];
+      const adapter = yield* makeAdapter(
+        clientFor(
+          () =>
+            sse([
+              sseData({ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }),
+              "data: [DONE]\n\n",
+            ]),
+          bodies,
+        ),
+      );
+      const threadId = thread("restart");
+      yield* adapter.startSession({
+        ...startInput("restart"),
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("test-openai-compatible"),
+          model: "model-a",
+        },
+      });
+      yield* adapter.sendTurn({ threadId, input: "first" });
+      yield* Stream.runHead(
+        Stream.filter(adapter.streamEvents, (event) => event.type === "turn.completed"),
+      );
+
+      const restarted = yield* adapter.startSession({
+        ...startInput("restart"),
+        runtimeMode: "approval-required",
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("test-openai-compatible"),
+          model: "model-b",
+        },
+      });
+      assert.equal(restarted.model, "model-b");
+      assert.equal(restarted.runtimeMode, "approval-required");
+
+      yield* adapter.sendTurn({ threadId, input: "second" });
+      yield* Stream.runHead(
+        Stream.filter(adapter.streamEvents, (event) => event.type === "turn.completed"),
+      );
+      assert.include(bodies[1]!, '"model":"model-b"');
+      assert.include(
+        bodies[1]!,
+        '"messages":[{"role":"user","content":"first"},{"role":"assistant","content":"ok"},{"role":"user","content":"second"}]',
+      );
+    }),
+  );
+
+  it.effect("uses unique turn ids across consecutive turns", () =>
+    Effect.gen(function* () {
+      const adapter = yield* makeAdapter(
+        clientFor(() =>
+          sse([
+            sseData({ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }),
+            "data: [DONE]\n\n",
+          ]),
+        ),
+      );
+      const threadId = thread("unique-turns");
+      yield* adapter.startSession(startInput("unique-turns"));
+      const first = yield* adapter.sendTurn({ threadId, input: "one" });
+      yield* Stream.runHead(
+        Stream.filter(adapter.streamEvents, (event) => event.type === "turn.completed"),
+      );
+      const second = yield* adapter.sendTurn({ threadId, input: "two" });
+      assert.notEqual(String(first.turnId), String(second.turnId));
+    }),
+  );
+
+  it.effect("fails a successful provider stream with no assistant output", () =>
+    Effect.gen(function* () {
+      const adapter = yield* makeAdapter(
+        clientFor(() =>
+          sse([sseData({ choices: [{ delta: {}, finish_reason: "stop" }] }), "data: [DONE]\n\n"]),
+        ),
+      );
+      const threadId = thread("empty-output");
+      yield* adapter.startSession(startInput("empty-output"));
+      yield* Stream.runCollect(Stream.take(adapter.streamEvents, 2));
+      yield* adapter.sendTurn({ threadId, input: "hello" });
+      const events = yield* Stream.runCollect(Stream.take(adapter.streamEvents, 2));
+      const completed = events.find((event) => event.type === "turn.completed");
+      assert.equal(completed?.type, "turn.completed");
+      if (completed?.type === "turn.completed") {
+        assert.equal(completed.payload.state, "failed");
+        assert.include(completed.payload.errorMessage ?? "", "without assistant text");
+      }
+    }),
+  );
+
+  it.effect("compacts old context through the same provider before overflow", () =>
+    Effect.gen(function* () {
+      const bodies: string[] = [];
+      const client = clientFor((request) => {
+        if (request.method === "POST" && bodies.length === 1) {
+          return response(
+            JSON.stringify({ choices: [{ message: { content: "prior decisions" } }] }),
+          );
+        }
+        return request.method === "GET"
+          ? response(JSON.stringify({ data: [{ id: "small", context_length: 100 }] }))
+          : sse([
+              sseData({ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }),
+              "data: [DONE]\n\n",
+            ]);
+      }, bodies);
+      const adapter = yield* makeAdapter(client, { defaultModel: "small" });
+      yield* adapter.listModels();
+      const prior = Array.from({ length: 9 }, (_, index) => ({
+        role: index % 2 === 0 ? "user" : "assistant",
+        content: `message-${index}`,
+      }));
+      yield* adapter.startSession({
+        ...startInput("compact"),
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("test-instance"),
+          model: "small",
+          options: [],
+        },
+        resumeCursor: { messages: prior },
+      });
+      yield* adapter.sendTurn({ threadId: thread("compact"), input: "new work" });
+      const events = yield* Stream.runCollect(Stream.take(adapter.streamEvents, 6));
+      assert.equal(
+        events.some(
+          (event) =>
+            event.type === "item.completed" && event.payload.itemType === "context_compaction",
+        ),
+        true,
+      );
+      assert.equal(
+        bodies.some((body) => body.includes("Summarize the completed conversation context")),
+        true,
+      );
+    }),
+  );
+
+  it.effect("forwards only provider-supported reasoning settings", () =>
+    Effect.gen(function* () {
+      const routerBodies: string[] = [];
+      const router = yield* makeAdapter(
+        clientFor(
+          () =>
+            sse([
+              sseData({ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }),
+              "data: [DONE]\n\n",
+            ]),
+          routerBodies,
+        ),
+        { provider: ProviderDriverKind.make("openrouter") },
+      );
+      const routerThread = thread("router-thinking");
+      yield* router.startSession({
+        ...startInput("router-thinking"),
+        provider: ProviderDriverKind.make("openrouter"),
+      });
+      yield* router.sendTurn({
+        threadId: routerThread,
+        input: "hello",
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("openrouter"),
+          model: "openai/model",
+          options: [{ id: "reasoningEffort", value: "high" }],
+        },
+      });
+      yield* Stream.runHead(
+        Stream.filter(router.streamEvents, (event) => event.type === "turn.completed"),
+      );
+      assert.include(routerBodies[0]!, '"reasoning":{"effort":"high"}');
+      yield* router.sendTurn({
+        threadId: routerThread,
+        input: "plain",
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("openrouter"),
+          model: "openai/no-thinking",
+        },
+      });
+      yield* Stream.runHead(
+        Stream.filter(router.streamEvents, (event) => event.type === "turn.completed"),
+      );
+      assert.notInclude(routerBodies[1]!, '"reasoning"');
+
+      const nvidiaBodies: string[] = [];
+      const nvidia = yield* makeAdapter(
+        clientFor(
+          () =>
+            sse([
+              sseData({ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }),
+              "data: [DONE]\n\n",
+            ]),
+          nvidiaBodies,
+        ),
+        { provider: ProviderDriverKind.make("nvidiaNim") },
+      );
+      const nvidiaThread = thread("nvidia-thinking");
+      yield* nvidia.startSession({
+        ...startInput("nvidia-thinking"),
+        provider: ProviderDriverKind.make("nvidiaNim"),
+      });
+      yield* nvidia.sendTurn({
+        threadId: nvidiaThread,
+        input: "hello",
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("nvidiaNim"),
+          model: "nvidia/nemotron-3-ultra-550b-a55b",
+          options: [{ id: "reasoningEffort", value: "medium" }],
+        },
+      });
+      yield* Stream.runHead(
+        Stream.filter(nvidia.streamEvents, (event) => event.type === "turn.completed"),
+      );
+      assert.include(nvidiaBodies[0]!, '"reasoning_effort":"medium"');
+    }),
+  );
+
   it.effect(
     "returns typed malformed, auth, and network errors without leaking response bodies",
     () =>
@@ -207,6 +441,22 @@ describe("OpenAICompatibleRuntime", () => {
         const authError = yield* auth.listModels().pipe(Effect.flip);
         assert.isTrue(Schema.is(OpenAICompatibleAuthError)(authError));
         assert.notInclude(String(authError), "sk-secret");
+
+        const unavailable = yield* makeAdapter(clientFor(() => response("account-id", 404)));
+        yield* unavailable.startSession(startInput("unavailable"));
+        yield* unavailable.sendTurn({ threadId: thread("unavailable"), input: "x" });
+        const unavailableEvents = yield* Stream.runCollect(
+          Stream.take(unavailable.streamEvents, 4),
+        );
+        const unavailableEvent = unavailableEvents.find((event) => event.type === "turn.completed");
+        assert.equal(unavailableEvent?.type, "turn.completed");
+        if (unavailableEvent?.type === "turn.completed") {
+          assert.include(
+            unavailableEvent.payload.errorMessage ?? "",
+            "selected model may be unavailable",
+          );
+          assert.notInclude(unavailableEvent.payload.errorMessage ?? "", "account-id");
+        }
 
         const network = HttpClient.make((request) =>
           Effect.fail(
@@ -252,6 +502,8 @@ describe("OpenAICompatibleRuntime", () => {
         .sendTurn({ threadId: thread("lifecycle"), input: "wait" })
         .pipe(Effect.forkChild);
       yield* Effect.promise(() => readPending).pipe(Effect.timeout("1 second"));
+      const restartError = yield* adapter.startSession(startInput("lifecycle")).pipe(Effect.flip);
+      assert.isTrue(Schema.is(ProviderAdapterValidationError)(restartError));
       yield* adapter.interruptTurn(thread("lifecycle"));
       yield* Fiber.join(send);
       yield* Stream.runHead(

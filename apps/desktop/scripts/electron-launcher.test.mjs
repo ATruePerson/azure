@@ -10,7 +10,7 @@ import {
 } from "./electron-launcher.mjs";
 
 describe("electron development launcher", () => {
-  it("uses the isolated Azure Code macOS identity", () => {
+  it("uses the isolated Azure macOS identity", () => {
     assert.equal(APP_DISPLAY_NAME, "Azure Code");
     assert.equal(APP_BUNDLE_ID, "com.atrueperson.azurecode");
     assert.deepEqual(APP_PROTOCOL_SCHEMES, ["azure-code", "t3code"]);

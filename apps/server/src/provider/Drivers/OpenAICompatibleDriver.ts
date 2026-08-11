@@ -10,6 +10,7 @@ import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientRequest } from "effect/unstable/http";
+import { createModelCapabilities, resolveModelContextWindow } from "@t3tools/shared/model";
 import {
   OpenAICompatibleAuthError,
   OpenAICompatibleMalformedResponseError,
@@ -63,6 +64,8 @@ export interface OpenAICompatibleDriverDefinition<Settings extends CompatibleSet
   readonly headers?: Readonly<Record<string, string>>;
   readonly authPath?: string;
   readonly allowedBearerOrigins: ReadonlySet<string>;
+  readonly disabledMessage?: string;
+  readonly authenticatedMessage?: string;
 }
 
 export type OpenAICompatibleDriverEnv =
@@ -70,7 +73,7 @@ export type OpenAICompatibleDriverEnv =
   | HttpClient.HttpClient
   | ServerSettingsService;
 
-const emptyCapabilities = { optionDescriptors: [] } as const;
+const emptyCapabilities = createModelCapabilities({ optionDescriptors: [] });
 
 function joinUrl(baseUrl: string, path: string): string {
   return `${baseUrl.replace(/\/+$/u, "")}/${path.replace(/^\/+/, "")}`;
@@ -85,7 +88,120 @@ function hasAllowedBearerOrigin(baseUrl: string, allowedOrigins: ReadonlySet<str
   }
 }
 
+function positiveNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : undefined;
+}
+
+function stringArray(value: unknown): ReadonlyArray<string> {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+    : [];
+}
+
+function modelCapabilities(
+  driverKind: string,
+  model: Readonly<{ readonly id: string; readonly [key: string]: unknown }>,
+) {
+  const discoveredContextWindow = positiveNumber(model.context_length);
+  const contextWindowTokens = resolveModelContextWindow({
+    provider: driverKind,
+    model: model.id,
+    ...(discoveredContextWindow !== undefined ? { discovered: discoveredContextWindow } : {}),
+  });
+  const advertisedTools =
+    model.supports_function_calling ?? model.supports_tools ?? model.tool_calling;
+  const functionToolSupport =
+    advertisedTools === true
+      ? ("verified" as const)
+      : advertisedTools === false
+        ? ("unsupported" as const)
+        : ("unknown" as const);
+  if (driverKind === "openrouter") {
+    const reasoning = model.reasoning;
+    const efforts =
+      reasoning && typeof reasoning === "object" && !Array.isArray(reasoning)
+        ? stringArray((reasoning as Record<string, unknown>).supported_efforts)
+        : [];
+    return createModelCapabilities({
+      optionDescriptors:
+        efforts.length > 0
+          ? [
+              {
+                id: "reasoningEffort",
+                label: "Thinking",
+                description: "Reasoning effort supported by this model.",
+                type: "select" as const,
+                options: efforts.map((effort) => ({
+                  id: effort,
+                  label: effort.charAt(0).toUpperCase() + effort.slice(1),
+                  ...(effort === (reasoning as Record<string, unknown>).default_effort
+                    ? { isDefault: true }
+                    : {}),
+                })),
+              },
+            ]
+          : [],
+      ...(contextWindowTokens ? { contextWindowTokens } : {}),
+      functionToolSupport,
+    });
+  }
+  if (driverKind === "nvidiaNim") {
+    const normalizedId = model.id.toLowerCase();
+    if (normalizedId === "nvidia/nemotron-3-ultra-550b-a55b") {
+      return createModelCapabilities({
+        optionDescriptors: [
+          {
+            id: "reasoningEffort",
+            label: "Reasoning effort",
+            type: "select",
+            options: [
+              { id: "none", label: "None" },
+              { id: "medium", label: "Medium" },
+              { id: "high", label: "High", isDefault: true },
+            ],
+          },
+        ],
+        contextWindowTokens: contextWindowTokens ?? 1_000_000,
+        functionToolSupport: "verified",
+      });
+    }
+    if (normalizedId.includes("gpt-oss")) {
+      return createModelCapabilities({
+        optionDescriptors: [
+          {
+            id: "reasoningEffort",
+            label: "Thinking",
+            type: "select",
+            options: [
+              { id: "low", label: "Low" },
+              { id: "medium", label: "Medium", isDefault: true },
+              { id: "high", label: "High" },
+            ],
+          },
+        ],
+        ...(contextWindowTokens ? { contextWindowTokens } : {}),
+        functionToolSupport,
+      });
+    }
+    if (normalizedId === "stepfun-ai/step-3.7-flash") {
+      return createModelCapabilities({
+        optionDescriptors: [],
+        contextWindowTokens: contextWindowTokens ?? 262_144,
+        functionToolSupport,
+      });
+    }
+  }
+  return createModelCapabilities({
+    optionDescriptors: [],
+    ...(contextWindowTokens ? { contextWindowTokens } : {}),
+    functionToolSupport,
+  });
+}
+
 function modelsFromApi(
+  driverKind: string,
   models: ReadonlyArray<{ readonly id: string; readonly [key: string]: unknown }>,
   customModels: ReadonlyArray<string>,
 ): ReadonlyArray<ServerProviderModel> {
@@ -93,7 +209,7 @@ function modelsFromApi(
     slug: model.id,
     name: typeof model.name === "string" && model.name.trim() ? model.name : model.id,
     isCustom: false,
-    capabilities: emptyCapabilities,
+    capabilities: modelCapabilities(driverKind, model),
   }));
   return providerModelsFromSettings(discovered, customModels, emptyCapabilities);
 }
@@ -123,7 +239,9 @@ function initialSnapshot(
             version: null,
             status: "warning",
             auth: { status: "unknown" },
-            message: `${definition.displayName} is disabled in settings.`,
+            message:
+              definition.disabledMessage ??
+              `${definition.displayName} is disabled in Azure settings.`,
           },
     });
   });
@@ -304,7 +422,9 @@ export function makeOpenAICompatibleDriver<Settings extends CompatibleSettings>(
                 version: null,
                 status: "warning",
                 auth: { status: "unknown" },
-                message: `${definition.displayName} is disabled in settings.`,
+                message:
+                  definition.disabledMessage ??
+                  `${definition.displayName} is disabled in Azure settings.`,
               },
             });
           }
@@ -424,12 +544,15 @@ export function makeOpenAICompatibleDriver<Settings extends CompatibleSettings>(
             presentation: { displayName: definition.displayName },
             enabled: true,
             checkedAt,
-            models: modelsFromApi(discovered.success, customModels),
+            models: modelsFromApi(String(definition.driverKind), discovered.success, customModels),
             probe: {
               installed: true,
               version: null,
               status: "ready",
               auth: authFromCheck("authenticated"),
+              ...(definition.authenticatedMessage
+                ? { message: definition.authenticatedMessage }
+                : {}),
             },
           });
         }).pipe(Effect.map(stampIdentity));

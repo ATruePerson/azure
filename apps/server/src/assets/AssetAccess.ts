@@ -40,6 +40,7 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { resolveAttachmentPathById } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
+import { resolveAzureHomeCapabilityIcon } from "../provider/AzureHomeCapabilities.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 
 export const ASSET_ROUTE_PREFIX = "/api/assets";
@@ -86,6 +87,13 @@ const AssetClaimsSchema = Schema.Union([
     kind: Schema.Literal("project-favicon"),
     workspaceRoot: Schema.String,
     relativePath: Schema.NullOr(Schema.String),
+    expiresAt: Schema.Number,
+  }),
+  Schema.Struct({
+    version: Schema.Literal(1),
+    kind: Schema.Literal("azure-capability-icon"),
+    category: Schema.Literals(["hooks", "plugins", "skills", "mcp"]),
+    id: Schema.String,
     expiresAt: Schema.Number,
   }),
 ]);
@@ -355,6 +363,17 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
       }
       break;
     }
+    case "azure-capability-icon": {
+      claims = {
+        version: 1,
+        kind: "azure-capability-icon",
+        category: input.resource.category,
+        id: input.resource.id,
+        expiresAt,
+      };
+      fileName = "icon";
+      break;
+    }
   }
 
   const secretStore = yield* ServerSecretStore.ServerSecretStore;
@@ -374,6 +393,7 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
       PROJECT_FAVICON_TOKEN_BUCKET_MS;
     claims = { ...claims, expiresAt };
   }
+
   const encodedPayload = base64UrlEncode(encodeAssetClaims(claims));
   const token = `${encodedPayload}.${signPayload(encodedPayload, signingSecret)}`;
   return {
@@ -430,6 +450,14 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
       relativePath: claims.relativePath,
     });
     return faviconPath ? ({ kind: "file", path: faviconPath } satisfies ResolvedAsset) : null;
+  }
+
+  if (claims.kind === "azure-capability-icon") {
+    if (decodeRelativePath(relativePath) !== "icon") return null;
+    const iconPath = yield* Effect.tryPromise(() =>
+      resolveAzureHomeCapabilityIcon({ category: claims.category, id: claims.id }),
+    ).pipe(Effect.orElseSucceed(() => null));
+    return iconPath ? ({ kind: "file", path: iconPath } satisfies ResolvedAsset) : null;
   }
 
   const decodedPath = decodeRelativePath(relativePath);

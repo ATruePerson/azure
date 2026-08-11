@@ -102,6 +102,33 @@ describe("rightPanelStore", () => {
     });
   });
 
+  it("keeps the Progress singleton during migration and opens it as a singleton", () => {
+    expect(
+      migratePersistedRightPanelState({
+        byThreadKey: {
+          "env-1:thread-A": {
+            isOpen: true,
+            activeSurfaceId: "progress",
+            surfaces: [{ id: "progress", kind: "progress" }],
+          },
+        },
+      }),
+    ).toEqual({
+      byThreadKey: {
+        "env-1:thread-A": {
+          isOpen: true,
+          activeSurfaceId: "progress",
+          surfaces: [{ id: "progress", kind: "progress" }],
+        },
+      },
+    });
+    useRightPanelStore.getState().open(refA, "progress");
+    useRightPanelStore.getState().open(refA, "progress");
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces,
+    ).toEqual([{ id: "progress", kind: "progress" }]);
+  });
+
   it("drops persisted plan surfaces and does not reopen an empty panel", () => {
     expect(
       migratePersistedRightPanelState({

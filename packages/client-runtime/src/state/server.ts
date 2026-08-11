@@ -690,6 +690,11 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.serverGetCodexCapabilities,
       staleTimeMs: 0,
     }),
+    scheduledTasks: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:scheduled-tasks",
+      tag: WS_METHODS.serverGetScheduledTasks,
+      staleTimeMs: 0,
+    }),
     traceDiagnostics: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:server:trace-diagnostics",
       tag: WS_METHODS.serverGetTraceDiagnostics,
@@ -768,6 +773,34 @@ export function createServerEnvironmentAtoms<R, E>(
         mode: "singleFlight",
         key: ({ environmentId }) => environmentId,
       },
+    }),
+    setAzureSkillEnabled: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:set-azure-skill-enabled",
+      tag: WS_METHODS.serverSetAzureSkillEnabled,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId }) => environmentId,
+      },
+    }),
+    setAzureCapabilityEnabled: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:set-azure-capability-enabled",
+      tag: WS_METHODS.serverSetAzureCapabilityEnabled,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId }) => environmentId,
+      },
+    }),
+    upsertScheduledTask: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:upsert-scheduled-task",
+      tag: WS_METHODS.serverUpsertScheduledTask,
+    }),
+    setScheduledTaskEnabled: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:set-scheduled-task-enabled",
+      tag: WS_METHODS.serverSetScheduledTaskEnabled,
+    }),
+    runScheduledTask: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:run-scheduled-task",
+      tag: WS_METHODS.serverRunScheduledTask,
     }),
     setCodexConfigEnabled: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:set-codex-config-enabled",

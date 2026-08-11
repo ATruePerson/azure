@@ -27,6 +27,7 @@ import { GrokDriver, type GrokDriverEnv } from "./Drivers/GrokDriver.ts";
 import { OpenCodeDriver, type OpenCodeDriverEnv } from "./Drivers/OpenCodeDriver.ts";
 import { NvidiaNimDriver } from "./Drivers/NvidiaNimDriver.ts";
 import { OpenRouterDriver } from "./Drivers/OpenRouterDriver.ts";
+import { OpenCodeZenDriver } from "./Drivers/OpenCodeZenDriver.ts";
 import type { OpenAICompatibleDriverEnv } from "./Drivers/OpenAICompatibleDriver.ts";
 import type { AnyProviderDriver } from "./ProviderDriver.ts";
 
@@ -56,4 +57,5 @@ export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv
   OpenCodeDriver,
   NvidiaNimDriver,
   OpenRouterDriver,
+  OpenCodeZenDriver,
 ];

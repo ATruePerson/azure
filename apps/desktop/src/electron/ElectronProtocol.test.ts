@@ -23,7 +23,7 @@ describe("ElectronProtocol", () => {
     unhandleMock.mockReset();
   });
 
-  it("uses isolated Azure Code schemes for production and development", () => {
+  it("uses isolated Azure schemes for production and development", () => {
     assert.equal(ElectronProtocol.getDesktopScheme(false), "azure-code");
     assert.equal(ElectronProtocol.getDesktopScheme(true), "azure-code-dev");
     assert.equal(ElectronProtocol.getDesktopOrigin(false), "azure-code://app");

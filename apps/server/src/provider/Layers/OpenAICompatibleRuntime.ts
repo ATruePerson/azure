@@ -1,4 +1,6 @@
 // @effect-diagnostics globalDate:off
+// @effect-diagnostics nodeBuiltinImport:off
+import { randomUUID } from "node:crypto";
 import {
   EventId,
   ProviderDriverKind,
@@ -7,6 +9,7 @@ import {
   ThreadId,
   TurnId,
   type ProviderRuntimeEvent,
+  type ProviderOptionSelection,
   type ProviderSession,
   type ProviderSendTurnInput,
   type ProviderSessionStartInput,
@@ -22,6 +25,7 @@ import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
 
 import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
+import { resolveModelContextWindow } from "@t3tools/shared/model";
 import { ProviderAdapterSessionNotFoundError, ProviderAdapterValidationError } from "../Errors.ts";
 
 export interface OpenAICompatibleTool {
@@ -101,7 +105,9 @@ export class OpenAICompatibleProviderError extends Schema.TaggedErrorClass<OpenA
   { operation: Schema.String, status: Schema.Int },
 ) {
   override get message(): string {
-    return `OpenAI-compatible provider request failed in ${this.operation} (HTTP ${this.status}).`;
+    const unavailableModelHint =
+      this.status === 404 ? " The selected model may be unavailable for this account." : "";
+    return `OpenAI-compatible provider request failed in ${this.operation} (HTTP ${this.status}).${unavailableModelHint}`;
   }
 }
 
@@ -115,7 +121,7 @@ export type OpenAICompatibleError =
   | ProviderAdapterValidationError;
 
 type Message = {
-  readonly role: "user" | "assistant" | "tool";
+  readonly role: "system" | "user" | "assistant" | "tool";
   readonly content: string | null;
   readonly reasoning_content?: string;
   readonly reasoning_details?: ReadonlyArray<unknown>;
@@ -143,9 +149,73 @@ interface SessionState {
   interruptSignals: Map<TurnId, Deferred.Deferred<void>>;
   interrupted: Set<TurnId>;
   turnFiber: Fiber.Fiber<void, never> | undefined;
+  modelOptions: ReadonlyArray<ProviderOptionSelection>;
+  totalProcessedTokens: number;
+  contextUsedTokens: number;
+  compacted: boolean;
+  compactedThrough?: TurnId;
 }
 
-const RESUME_VERSION = 1;
+const RESUME_VERSION = 2;
+
+function resumeMessages(value: unknown): Message[] {
+  if (!record(value) || !Array.isArray(value.messages)) return [];
+  return value.messages.flatMap((raw) => {
+    if (!record(raw) || !["system", "user", "assistant", "tool"].includes(String(raw.role))) {
+      return [];
+    }
+    const content =
+      raw.content === null || typeof raw.content === "string" ? raw.content : undefined;
+    if (content === undefined) return [];
+    const message: Message = {
+      role: raw.role as Message["role"],
+      content,
+      ...(typeof raw.tool_call_id === "string" ? { tool_call_id: raw.tool_call_id } : {}),
+      ...(typeof raw.reasoning_content === "string"
+        ? { reasoning_content: raw.reasoning_content }
+        : {}),
+    };
+    if (Array.isArray(raw.tool_calls)) {
+      const toolCalls = raw.tool_calls.flatMap((tool) => {
+        if (
+          !record(tool) ||
+          tool.type !== "function" ||
+          typeof tool.id !== "string" ||
+          !record(tool.function)
+        )
+          return [];
+        if (typeof tool.function.name !== "string" || typeof tool.function.arguments !== "string")
+          return [];
+        return [
+          {
+            id: tool.id,
+            type: "function" as const,
+            function: { name: tool.function.name, arguments: tool.function.arguments },
+          },
+        ];
+      });
+      if (toolCalls.length > 0) return [{ ...message, tool_calls: toolCalls }];
+    }
+    return [message];
+  });
+}
+
+function makeResumeCursor(
+  threadId: ThreadId,
+  messages: ReadonlyArray<Message>,
+  compactedThrough?: TurnId,
+): Record<string, unknown> {
+  return {
+    schemaVersion: RESUME_VERSION,
+    threadId: String(threadId),
+    messages,
+    ...(compactedThrough ? { compactedThrough: String(compactedThrough) } : {}),
+  };
+}
+
+function estimatedTokens(messages: ReadonlyArray<Message>): number {
+  return Math.ceil(JSON.stringify(messages).length / 4);
+}
 
 function joinUrl(baseUrl: string, path: string): string {
   return `${baseUrl.replace(/\/+$/u, "")}/${path.replace(/^\/+/, "")}`;
@@ -161,6 +231,99 @@ function record(value: unknown): value is Record<string, unknown> {
 
 function text(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function optionValue(
+  options: ReadonlyArray<ProviderOptionSelection>,
+  id: string,
+): string | undefined {
+  const value = options.find((option) => option.id === id)?.value;
+  return typeof value === "string" ? value : undefined;
+}
+
+function optionNumber(
+  options: ReadonlyArray<ProviderOptionSelection>,
+  id: string,
+): number | undefined {
+  const value = optionValue(options, id);
+  if (!value) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : undefined;
+}
+
+function positiveNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : undefined;
+}
+
+function nonNegativeNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.floor(value)
+    : undefined;
+}
+
+function requestOptions(
+  provider: ProviderDriverKind,
+  model: string,
+  modelOptions: ReadonlyArray<ProviderOptionSelection>,
+): Record<string, unknown> {
+  const providerId = String(provider);
+  if (providerId === "openrouter") {
+    const effort = optionValue(modelOptions, "reasoningEffort");
+    return effort ? { reasoning: { effort } } : {};
+  }
+  if (providerId !== "nvidiaNim") return {};
+  if (model.toLowerCase() === "nvidia/nemotron-3-ultra-550b-a55b") {
+    const effort = optionValue(modelOptions, "reasoningEffort");
+    return effort && ["none", "medium", "high"].includes(effort)
+      ? { reasoning_effort: effort }
+      : {};
+  }
+  if (model.toLowerCase().includes("gpt-oss")) {
+    const effort = optionValue(modelOptions, "reasoningEffort");
+    return effort && ["low", "medium", "high"].includes(effort) ? { reasoning_effort: effort } : {};
+  }
+  return {};
+}
+
+function normalizedUsage(
+  rawUsage: unknown,
+  maxTokens: number | undefined,
+  totalProcessedTokens: number,
+  compactsAutomatically = false,
+) {
+  if (!record(rawUsage)) return null;
+  const inputTokens = nonNegativeNumber(rawUsage.prompt_tokens);
+  const outputTokens = nonNegativeNumber(rawUsage.completion_tokens);
+  const totalTokens =
+    nonNegativeNumber(rawUsage.total_tokens) ??
+    (inputTokens !== undefined || outputTokens !== undefined
+      ? (inputTokens ?? 0) + (outputTokens ?? 0)
+      : undefined);
+  if (totalTokens === undefined) return null;
+  const details = record(rawUsage.completion_tokens_details)
+    ? rawUsage.completion_tokens_details
+    : null;
+  const cachedInputTokens = record(rawUsage.prompt_tokens_details)
+    ? nonNegativeNumber(rawUsage.prompt_tokens_details.cached_tokens)
+    : undefined;
+  const reasoningOutputTokens = details ? nonNegativeNumber(details.reasoning_tokens) : undefined;
+  return {
+    usedTokens: totalTokens,
+    totalProcessedTokens: totalProcessedTokens + totalTokens,
+    ...(maxTokens ? { maxTokens } : {}),
+    ...(inputTokens !== undefined ? { inputTokens, lastInputTokens: inputTokens } : {}),
+    ...(cachedInputTokens !== undefined
+      ? { cachedInputTokens, lastCachedInputTokens: cachedInputTokens }
+      : {}),
+    ...(outputTokens !== undefined ? { outputTokens, lastOutputTokens: outputTokens } : {}),
+    ...(reasoningOutputTokens !== undefined
+      ? { reasoningOutputTokens, lastReasoningOutputTokens: reasoningOutputTokens }
+      : {}),
+    ...(compactsAutomatically ? { compactsAutomatically: true } : {}),
+    lastUsedTokens: totalTokens,
+  };
 }
 
 function makeError(operation: string, cause: unknown): OpenAICompatibleNetworkError {
@@ -277,12 +440,12 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
   }
 
   const sessions = new Map<ThreadId, SessionState>();
+  const contextWindowTokensByModel = new Map<string, number>();
   const events = yield* Queue.unbounded<ProviderRuntimeEvent>();
   let eventNumber = 0;
-  let turnNumber = 0;
 
   const emit = (event: ProviderRuntimeEvent) => Queue.offer(events, event);
-  const nextTurnId = () => TurnId.make(`openai-compatible-turn:${++turnNumber}`);
+  const nextTurnId = Effect.sync(() => TurnId.make(randomUUID()));
   const sessionError = (threadId: ThreadId) =>
     new ProviderAdapterSessionNotFoundError({
       provider: String(options.provider),
@@ -319,6 +482,10 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
           detail: "Model entries require an id.",
         });
       }
+      const contextWindowTokens = positiveNumber(model.context_length);
+      if (contextWindowTokens !== undefined) {
+        contextWindowTokensByModel.set(model.id, contextWindowTokens);
+      }
       return model as OpenAICompatibleModel;
     });
   });
@@ -332,15 +499,30 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
           issue: "Provider does not match this adapter.",
         });
       }
-      if (sessions.has(input.threadId)) {
+      const existing = sessions.get(input.threadId);
+      const model = input.modelSelection?.model ?? options.defaultModel;
+      const createdAt = now();
+      if (existing?.activeTurnId !== undefined) {
         return yield* new ProviderAdapterValidationError({
           provider: String(options.provider),
           operation: "startSession",
-          issue: "Session already exists.",
+          issue: "Cannot restart a session while a turn is active.",
         });
       }
-      const model = input.modelSelection?.model ?? options.defaultModel;
-      const createdAt = now();
+      if (existing) {
+        existing.modelOptions = input.modelSelection
+          ? (input.modelSelection.options ?? [])
+          : existing.modelOptions;
+        existing.session = {
+          ...existing.session,
+          status: "ready",
+          runtimeMode: input.runtimeMode,
+          ...(input.cwd ? { cwd: input.cwd } : {}),
+          ...(model ? { model } : {}),
+          updatedAt: createdAt,
+        };
+        return existing.session;
+      }
       const session: ProviderSession = {
         provider: options.provider,
         ...(options.providerInstanceId
@@ -351,18 +533,32 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
         ...(input.cwd ? { cwd: input.cwd } : {}),
         ...(model ? { model } : {}),
         threadId: input.threadId,
-        resumeCursor: { schemaVersion: RESUME_VERSION, threadId: String(input.threadId) },
+        resumeCursor: makeResumeCursor(
+          input.threadId,
+          resumeMessages(input.resumeCursor),
+          record(input.resumeCursor) && typeof input.resumeCursor.compactedThrough === "string"
+            ? TurnId.make(input.resumeCursor.compactedThrough)
+            : undefined,
+        ),
         createdAt,
         updatedAt: createdAt,
       };
       sessions.set(input.threadId, {
         session,
-        messages: [],
+        messages: resumeMessages(input.resumeCursor),
         turns: [],
         activeTurnId: undefined,
         interruptSignals: new Map(),
         interrupted: new Set(),
         turnFiber: undefined,
+        modelOptions: input.modelSelection?.options ?? [],
+        totalProcessedTokens: 0,
+        contextUsedTokens: estimatedTokens(resumeMessages(input.resumeCursor)),
+        compacted:
+          record(input.resumeCursor) && typeof input.resumeCursor.compactedThrough === "string",
+        ...(record(input.resumeCursor) && typeof input.resumeCursor.compactedThrough === "string"
+          ? { compactedThrough: TurnId.make(input.resumeCursor.compactedThrough) }
+          : {}),
       });
       yield* emit({
         ...makeEventBase(options.provider, input.threadId, ++eventNumber),
@@ -377,6 +573,105 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
       return session;
     });
 
+  const compactBeforeTurn = (
+    state: SessionState,
+    threadId: ThreadId,
+    turnId: TurnId,
+    model: string | undefined,
+    additionalMessage?: Message,
+  ): Effect.Effect<boolean, OpenAICompatibleError> =>
+    Effect.gen(function* () {
+      const discoveredContextWindow = contextWindowTokensByModel.get(model ?? "");
+      const maximum = resolveModelContextWindow({
+        provider: options.provider,
+        model,
+        ...(discoveredContextWindow !== undefined ? { discovered: discoveredContextWindow } : {}),
+      });
+      if (!maximum) return false;
+      const selectedMaxOutput = optionNumber(state.modelOptions, "maxOutputTokens") ?? 16_384;
+      const threshold = Math.min(
+        Math.floor(maximum * 0.99),
+        Math.max(1, maximum - selectedMaxOutput - 1_024),
+      );
+      const projected = estimatedTokens(
+        additionalMessage ? [...state.messages, additionalMessage] : state.messages,
+      );
+      if (projected < threshold || state.messages.length <= 8) return false;
+
+      let keepStart = Math.max(0, state.messages.length - 8);
+      while (keepStart > 0 && state.messages[keepStart]?.role === "tool") keepStart -= 1;
+      const removed = state.messages
+        .slice(0, keepStart)
+        .filter((message) => message.role !== "system");
+      if (removed.length === 0) return false;
+      const keep = state.messages.slice(keepStart).filter((message) => message.role !== "system");
+      const summaryRequest: Record<string, unknown> = {
+        model,
+        stream: false,
+        messages: [
+          {
+            role: "system",
+            content:
+              "Summarize the completed conversation context for a later assistant. Preserve decisions, constraints, unresolved work, and tool results. Be concise.",
+          },
+          { role: "user", content: JSON.stringify(removed) },
+        ],
+        ...requestOptions(options.provider, model ?? "", state.modelOptions),
+      };
+      const body = yield* responseBody(
+        client,
+        requestWithHeaders(
+          HttpClientRequest.post(
+            joinUrl(options.baseUrl, options.chatCompletionsPath ?? "/chat/completions"),
+          ).pipe(
+            HttpClientRequest.bodyJsonUnsafe(summaryRequest),
+            HttpClientRequest.setHeaders({ "Content-Type": "application/json" }),
+          ),
+          options,
+        ),
+        "context.compact",
+      );
+      const parsed = yield* parseJson("context.compact", body);
+      const choices = record(parsed) && Array.isArray(parsed.choices) ? parsed.choices : [];
+      const summary =
+        choices.length > 0 && record(choices[0]) && record(choices[0].message)
+          ? text(choices[0].message.content)
+          : undefined;
+      if (!summary?.trim()) {
+        return yield* new OpenAICompatibleMalformedResponseError({
+          operation: "context.compact",
+          detail: "Provider returned no compaction summary.",
+        });
+      }
+      state.messages = [
+        ...state.messages.filter((message) => message.role === "system"),
+        { role: "system", content: `<context_summary>\n${summary.trim()}\n</context_summary>` },
+        ...keep,
+      ];
+      state.compacted = true;
+      const compactedThrough = [...state.turns]
+        .reverse()
+        .find((turn) => turn.messages.some((message) => removed.includes(message)))?.id;
+      if (compactedThrough) state.compactedThrough = compactedThrough;
+      state.session = {
+        ...state.session,
+        resumeCursor: makeResumeCursor(threadId, state.messages, state.compactedThrough),
+      };
+      state.contextUsedTokens = estimatedTokens(state.messages);
+      yield* emit({
+        ...makeEventBase(options.provider, threadId, ++eventNumber, turnId),
+        itemId: RuntimeItemId.make(`compaction:${String(turnId)}`),
+        type: "item.completed",
+        payload: {
+          itemType: "context_compaction",
+          status: "completed",
+          title: "Context compacted",
+          data: { compactedThrough: String(state.compactedThrough ?? turnId), summary },
+        },
+      });
+      return true;
+    });
+
   const runTurn = (
     state: SessionState,
     input: {
@@ -385,6 +680,7 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
       readonly model?: string;
       readonly beforeMessages: number;
       readonly beforeTurns: number;
+      readonly modelOptions: ReadonlyArray<ProviderOptionSelection>;
     },
   ): Effect.Effect<void, OpenAICompatibleError> =>
     Effect.gen(function* () {
@@ -407,6 +703,11 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
         stream: true,
         ...(options.tools ? { tools: options.tools } : {}),
         ...(options.toolChoice ? { tool_choice: options.toolChoice } : {}),
+        ...requestOptions(
+          options.provider,
+          input.model ?? options.defaultModel ?? "",
+          input.modelOptions,
+        ),
       };
       if (typeof payload.model !== "string" || payload.model.length === 0) {
         return yield* new OpenAICompatibleValidationError({
@@ -608,6 +909,15 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
       const assembledToolCalls = Array.from(toolCalls.entries())
         .sort(([left], [right]) => left - right)
         .map(([, value]) => value);
+      if (assistantText.trim().length === 0 && assembledToolCalls.length === 0) {
+        const detail = "Provider completed without assistant text or a tool call.";
+        yield* emit({
+          ...makeEventBase(options.provider, input.threadId, ++eventNumber, input.turnId),
+          type: "turn.completed",
+          payload: { state: "failed", errorMessage: detail },
+        });
+        return;
+      }
       const assistant: Message = {
         role: "assistant",
         content: assistantText || null,
@@ -629,6 +939,29 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
         items: itemList,
       };
       state.turns.push(turn);
+      state.session = {
+        ...state.session,
+        resumeCursor: makeResumeCursor(input.threadId, state.messages, state.compactedThrough),
+      };
+      const usageSnapshot = normalizedUsage(
+        usage,
+        contextWindowTokensByModel.get(input.model ?? options.defaultModel ?? "") ??
+          (String(options.provider) === "nvidiaNim" &&
+          (input.model ?? options.defaultModel) === "nvidia/nemotron-3-ultra-550b-a55b"
+            ? 1_000_000
+            : undefined),
+        state.totalProcessedTokens,
+        state.compacted,
+      );
+      if (usageSnapshot) {
+        state.totalProcessedTokens = usageSnapshot.totalProcessedTokens;
+        state.contextUsedTokens = usageSnapshot.usedTokens;
+        yield* emit({
+          ...makeEventBase(options.provider, input.threadId, ++eventNumber, input.turnId),
+          type: "thread.token-usage.updated",
+          payload: { usage: usageSnapshot },
+        });
+      }
       for (const [index, tool] of toolCalls) {
         yield* emit({
           ...makeEventBase(options.provider, input.threadId, ++eventNumber, input.turnId),
@@ -660,6 +993,7 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
       readonly turnId: TurnId;
       readonly beforeMessages: number;
       readonly beforeTurns: number;
+      readonly modelOptions: ReadonlyArray<ProviderOptionSelection>;
     },
   ): Effect.Effect<void, never> =>
     Effect.raceFirst(
@@ -727,6 +1061,7 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
       readonly model?: string;
       readonly beforeMessages: number;
       readonly beforeTurns: number;
+      readonly modelOptions: ReadonlyArray<ProviderOptionSelection>;
     },
   ): Effect.Effect<void, never> =>
     Effect.gen(function* () {
@@ -771,11 +1106,22 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
         });
       }
       const model = input.modelSelection?.model ?? state.session.model ?? options.defaultModel;
-      const turnId = nextTurnId();
+      state.modelOptions = input.modelSelection
+        ? (input.modelSelection.options ?? [])
+        : state.modelOptions;
+      const turnId = yield* nextTurnId;
       const beforeMessages = state.messages.length;
       const beforeTurns = state.turns.length;
       const interrupt = yield* Deferred.make<void>();
+      yield* compactBeforeTurn(state, input.threadId, turnId, model, {
+        role: "user",
+        content: prompt,
+      });
       state.messages.push({ role: "user", content: prompt });
+      state.session = {
+        ...state.session,
+        resumeCursor: makeResumeCursor(input.threadId, state.messages, state.compactedThrough),
+      };
       state.interruptSignals.set(turnId, interrupt);
       yield* startTurn(state, {
         threadId: input.threadId,
@@ -783,6 +1129,7 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
         beforeMessages,
         beforeTurns,
         ...(model === undefined ? {} : { model }),
+        modelOptions: state.modelOptions,
       });
       return { threadId: input.threadId, turnId } satisfies ProviderTurnStartResult;
     });
@@ -802,11 +1149,22 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
       }
       const beforeMessages = state.messages.length;
       const beforeTurns = state.turns.length;
+      const turnId = yield* nextTurnId;
+      yield* compactBeforeTurn(state, input.threadId, turnId, state.session.model, {
+        role: "tool",
+        content: input.content,
+        tool_call_id: input.toolCallId,
+      });
       state.messages.push({ role: "tool", content: input.content, tool_call_id: input.toolCallId });
-      const turnId = nextTurnId();
       const interrupt = yield* Deferred.make<void>();
       state.interruptSignals.set(turnId, interrupt);
-      yield* startTurn(state, { threadId: input.threadId, turnId, beforeMessages, beforeTurns });
+      yield* startTurn(state, {
+        threadId: input.threadId,
+        turnId,
+        beforeMessages,
+        beforeTurns,
+        modelOptions: state.modelOptions,
+      });
       return { threadId: input.threadId, turnId } satisfies ProviderTurnStartResult;
     });
 

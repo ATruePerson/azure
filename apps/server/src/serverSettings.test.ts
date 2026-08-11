@@ -692,7 +692,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
-  it.effect("rejects NVIDIA and OpenRouter keys that are not marked sensitive", () =>
+  it.effect("rejects provider API keys that are not marked sensitive", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
       const error = yield* Effect.flip(
@@ -711,6 +711,28 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       assert.equal(error.operation, "normalize");
       assert.equal(error.environmentVariable, "OPENROUTER_API_KEY");
       assert.notInclude(String(error), "router-secret");
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("requires the separate OpenCode Zen key to be sensitive", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const error = yield* Effect.flip(
+        serverSettings.updateSettings({
+          providerInstances: {
+            [ProviderInstanceId.make("opencodeZen")]: {
+              driver: ProviderDriverKind.make("opencodeZen"),
+              environment: [
+                { name: "OPENCODE_ZEN_API_KEY", value: "zen-secret", sensitive: false },
+              ],
+              config: {},
+            },
+          },
+        }),
+      );
+      assert.equal(error.operation, "normalize");
+      assert.equal(error.environmentVariable, "OPENCODE_ZEN_API_KEY");
+      assert.notInclude(String(error), "zen-secret");
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 

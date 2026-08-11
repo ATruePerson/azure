@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 
 import * as NodeModule from "node:module";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
 
 import { fromYaml } from "@t3tools/shared/schemaYaml";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
@@ -38,6 +41,53 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
 const DESKTOP_APP_ID = "com.atrueperson.azurecode";
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
+
+function patchPackagedMacBundle(appBundlePath: string): void {
+  const setPlist = (plistPath: string, key: string, type: "string" | "bool", value: string) => {
+    const replace = NodeChildProcess.spawnSync(
+      "plutil",
+      ["-replace", key, `-${type}`, value, plistPath],
+      { encoding: "utf8" },
+    );
+    if (replace.status === 0) return;
+    const insert = NodeChildProcess.spawnSync(
+      "plutil",
+      ["-insert", key, `-${type}`, value, plistPath],
+      { encoding: "utf8" },
+    );
+    if (insert.status !== 0) throw new Error(`Failed to patch packaged plist ${plistPath}.`);
+  };
+  const mainPlist = NodePath.join(appBundlePath, "Contents", "Info.plist");
+  setPlist(mainPlist, "CFBundleDisplayName", "string", "Azure Code");
+  setPlist(mainPlist, "CFBundleName", "string", "Azure Code");
+  const frameworks = NodePath.join(appBundlePath, "Contents", "Frameworks");
+  if (!NodeFS.existsSync(frameworks)) return;
+  for (const entry of NodeFS.readdirSync(frameworks)) {
+    if (!entry.endsWith(".app")) continue;
+    const helperName = entry.includes("(GPU)")
+      ? "Electron Helper (GPU)"
+      : entry.includes("(Plugin)")
+        ? "Electron Helper (Plugin)"
+        : entry.includes("(Renderer)")
+          ? "Electron Helper (Renderer)"
+          : "Electron Helper";
+    const plist = NodePath.join(frameworks, entry, "Contents", "Info.plist");
+    if (!NodeFS.existsSync(plist)) continue;
+    setPlist(plist, "CFBundleDisplayName", "string", helperName);
+    setPlist(plist, "CFBundleName", "string", helperName);
+    setPlist(plist, "LSUIElement", "bool", "true");
+  }
+  NodeFS.writeFileSync(NodePath.join(frameworks, ".metadata_never_index"), "");
+}
+
+function adHocSignMacBundle(appBundlePath: string): void {
+  const result = NodeChildProcess.spawnSync(
+    "codesign",
+    ["--force", "--deep", "--sign", "-", "--timestamp=none", appBundlePath],
+    { encoding: "utf8" },
+  );
+  if (result.status !== 0) throw new Error(`Failed to ad-hoc sign packaged app ${appBundlePath}.`);
+}
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
 const BuildArch = Schema.Literals(["arm64", "x64", "universal"]);
@@ -2039,6 +2089,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     stageAppDir,
     platformConfig.cliFlag,
     `--${options.arch}`,
+    ...(options.target === "dir" ? ["--dir"] : options.target ? [`--${options.target}`] : []),
     "--publish",
     "never",
   ];
@@ -2064,6 +2115,20 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     });
   }
 
+  if (options.platform === "mac" && options.target === "dir") {
+    for (const platformEntry of NodeFS.readdirSync(stageDistDir, { withFileTypes: true })) {
+      if (!platformEntry.isDirectory()) continue;
+      for (const appEntry of NodeFS.readdirSync(NodePath.join(stageDistDir, platformEntry.name), {
+        withFileTypes: true,
+      })) {
+        if (appEntry.isDirectory() && appEntry.name.endsWith(".app")) {
+          const appPath = NodePath.join(stageDistDir, platformEntry.name, appEntry.name);
+          patchPackagedMacBundle(appPath);
+        }
+      }
+    }
+  }
+
   const stageEntries = yield* fs.readDirectory(stageDistDir);
   yield* fs.makeDirectory(options.outputDir, { recursive: true });
 
@@ -2071,11 +2136,30 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   for (const entry of stageEntries) {
     const from = path.join(stageDistDir, entry);
     const stat = yield* fs.stat(from).pipe(Effect.orElseSucceed(() => null));
-    if (!stat || stat.type !== "File") continue;
+    if (!stat || (stat.type !== "File" && !(options.target === "dir" && stat.type === "Directory")))
+      continue;
 
     const to = path.join(options.outputDir, entry);
-    yield* fs.copyFile(from, to);
+    if (stat.type === "Directory") {
+      NodeFS.cpSync(from, to, { recursive: true, verbatimSymlinks: true });
+    } else {
+      yield* fs.copyFile(from, to);
+    }
     copiedArtifacts.push(to);
+  }
+
+  if (options.platform === "mac" && options.target === "dir" && !options.signed) {
+    for (const platformEntry of NodeFS.readdirSync(options.outputDir, { withFileTypes: true })) {
+      if (!platformEntry.isDirectory()) continue;
+      for (const appEntry of NodeFS.readdirSync(
+        NodePath.join(options.outputDir, platformEntry.name),
+        { withFileTypes: true },
+      )) {
+        if (appEntry.isDirectory() && appEntry.name.endsWith(".app")) {
+          adHocSignMacBundle(NodePath.join(options.outputDir, platformEntry.name, appEntry.name));
+        }
+      }
+    }
   }
 
   if (copiedArtifacts.length === 0) {

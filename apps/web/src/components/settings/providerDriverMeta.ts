@@ -4,6 +4,7 @@ import {
   CursorSettings,
   GrokSettings,
   NvidiaNimSettings,
+  OpenCodeZenSettings,
   OpenRouterSettings,
   OpenCodeSettings,
   ProviderDriverKind,
@@ -89,6 +90,12 @@ export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = 
     label: "OpenRouter",
     icon: OpenRouterIcon,
     settingsSchema: OpenRouterSettings,
+  },
+  {
+    value: ProviderDriverKind.make("opencodeZen"),
+    label: "OpenCode Zen",
+    icon: OpenCodeIcon,
+    settingsSchema: OpenCodeZenSettings,
   },
 ];
 

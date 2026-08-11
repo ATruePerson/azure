@@ -4,6 +4,11 @@ export type SettingsPath =
   | "/settings/keybindings"
   | "/settings/providers"
   | "/settings/capabilities"
+  | "/settings/hooks"
+  | "/settings/plugins"
+  | "/settings/skills"
+  | "/settings/mcp"
+  | "/settings/scheduled-tasks"
   | "/settings/source-control"
   | "/settings/connections"
   | "/settings/archived";
@@ -25,6 +30,11 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/keybindings": "Keybindings",
   "/settings/providers": "Providers",
   "/settings/capabilities": "Capabilities",
+  "/settings/hooks": "Hooks",
+  "/settings/plugins": "Plugins",
+  "/settings/skills": "Skills",
+  "/settings/mcp": "MCP",
+  "/settings/scheduled-tasks": "Scheduled Tasks",
   "/settings/source-control": "Source Control",
   "/settings/connections": "Connections",
   "/settings/archived": "Archive",
@@ -185,6 +195,26 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "capabilities",
     title: "Capabilities",
     to: "/settings/capabilities",
+  },
+  {
+    id: "hooks",
+    title: "Hooks",
+    to: "/settings/hooks",
+  },
+  {
+    id: "plugins",
+    title: "Plugins",
+    to: "/settings/plugins",
+  },
+  {
+    id: "skills",
+    title: "Skills",
+    to: "/settings/skills",
+  },
+  {
+    id: "mcp",
+    title: "MCP",
+    to: "/settings/mcp",
   },
   {
     id: "source-control",

@@ -471,6 +471,7 @@ export type OpenCodeSettings = typeof OpenCodeSettings.Type;
 
 export const NVIDIA_NIM_DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1";
 export const OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
+export const OPENCODE_ZEN_DEFAULT_BASE_URL = "https://opencode.ai/zen/v1";
 
 export const NvidiaNimSettings = makeProviderSettingsSchema(
   {
@@ -523,6 +524,32 @@ export const OpenRouterSettings = makeProviderSettingsSchema(
   { order: ["baseUrl"] },
 );
 export type OpenRouterSettings = typeof OpenRouterSettings.Type;
+
+export const OpenCodeZenSettings = makeProviderSettingsSchema(
+  {
+    enabled: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(true)),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+    baseUrl: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed(OPENCODE_ZEN_DEFAULT_BASE_URL)),
+      Schema.annotateKey({
+        title: "Base URL",
+        description: "OpenCode Zen OpenAI-compatible API endpoint.",
+        providerSettingsForm: {
+          placeholder: OPENCODE_ZEN_DEFAULT_BASE_URL,
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
+    customModels: Schema.Array(Schema.String).pipe(
+      Schema.withDecodingDefault(Effect.succeed([])),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+  },
+  { order: ["baseUrl"] },
+);
+export type OpenCodeZenSettings = typeof OpenCodeZenSettings.Type;
 
 export const ObservabilitySettings = Schema.Struct({
   otlpTracesUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
@@ -656,6 +683,7 @@ export const ServerSettings = Schema.Struct({
     opencode: OpenCodeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     nvidiaNim: NvidiaNimSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     openrouter: OpenRouterSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    opencodeZen: OpenCodeZenSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   }).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   // New driver-agnostic instance map. Keyed by `ProviderInstanceId`; values
   // are `ProviderInstanceConfig` envelopes. The driver-specific config blob
@@ -771,6 +799,12 @@ const OpenRouterSettingsPatch = Schema.Struct({
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 
+const OpenCodeZenSettingsPatch = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+  baseUrl: Schema.optionalKey(TrimmedString),
+  customModels: Schema.optionalKey(Schema.Array(Schema.String)),
+});
+
 export const ServerSettingsPatch = Schema.Struct({
   // Server settings
   enableLegacyTokenStreaming: Schema.optionalKey(Schema.Boolean),
@@ -813,6 +847,7 @@ export const ServerSettingsPatch = Schema.Struct({
       opencode: Schema.optionalKey(OpenCodeSettingsPatch),
       nvidiaNim: Schema.optionalKey(NvidiaNimSettingsPatch),
       openrouter: Schema.optionalKey(OpenRouterSettingsPatch),
+      opencodeZen: Schema.optionalKey(OpenCodeZenSettingsPatch),
     }),
   ),
   // Whole-map replacement for the new instance config. Patching individual

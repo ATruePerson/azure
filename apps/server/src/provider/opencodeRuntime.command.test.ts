@@ -23,6 +23,23 @@ it.layer(LiveLayer)("OpenCode CLI output", (it) => {
       expect(result.stdout).toHaveLength(200_000);
     }),
   );
+
+  it.effect("gives isolated probes a writable OpenCode data root", () =>
+    Effect.gen(function* () {
+      const runtime = yield* OpenCodeRuntime;
+      const result = yield* runtime.runOpenCodeCommand({
+        binaryPath: process.execPath,
+        args: [
+          "-e",
+          'const fs=require("node:fs");const p=process.env.XDG_DATA_HOME;if(!p||!fs.existsSync(p))process.exit(1);fs.mkdirSync(p+"/log");fs.writeFileSync(p+"/log/opencode.log","ok")',
+        ],
+        environment: process.env,
+        isolatedDataHome: true,
+      });
+
+      expect(result.code).toBe(0);
+    }),
+  );
 });
 
 it.live("retries a transient skill inventory failure", () =>

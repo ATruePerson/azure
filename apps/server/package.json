@@ -32,6 +32,7 @@
     "@pierre/diffs": "catalog:",
     "effect": "catalog:",
     "node-pty": "^1.1.0",
+    "rrule": "^2.8.1",
     "yaml": "catalog:"
   },
   "devDependencies": {

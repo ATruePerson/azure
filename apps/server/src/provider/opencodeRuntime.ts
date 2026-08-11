@@ -39,7 +39,9 @@ import { collectStreamAsString } from "./providerSnapshot.ts";
 import * as NetService from "@t3tools/shared/Net";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { discoverEnabledAzureOpenCodeConfig } from "./AzureHomeCapabilities.ts";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
+const encodeUnknownJsonString = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 const OPENCODE_EMPTY_CONFIG_CONTENT = "{}";
 
 const OPENCODE_SERVER_READY_PREFIX = "opencode server listening";
@@ -159,6 +161,7 @@ export interface OpenCodeRuntimeShape {
     readonly binaryPath: string;
     readonly args: ReadonlyArray<string>;
     readonly environment?: NodeJS.ProcessEnv;
+    readonly isolatedDataHome?: boolean;
   }) => Effect.Effect<OpenCodeCommandResult, OpenCodeRuntimeError>;
   readonly createOpenCodeSdkClient: (input: {
     readonly baseUrl: string;
@@ -494,6 +497,13 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
           const outputDirectory = await NodeFs.mkdtemp(
             NodePath.join(NodeOs.tmpdir(), "t3-opencode-command-"),
           );
+          const childEnvironment = input.isolatedDataHome
+            ? {
+                ...(input.environment ?? process.env),
+                XDG_DATA_HOME: outputDirectory,
+                XDG_STATE_HOME: outputDirectory,
+              }
+            : (input.environment ?? process.env);
           const stdoutPath = NodePath.join(outputDirectory, "stdout");
           const stderrPath = NodePath.join(outputDirectory, "stderr");
           const stdoutFile = await NodeFs.open(stdoutPath, "w");
@@ -501,7 +511,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
           try {
             const code = await new Promise<number>((resolve, reject) => {
               const child = NodeChildProcess.spawn(spawnCommand.command, spawnCommand.args, {
-                env: input.environment ?? process.env,
+                env: childEnvironment,
                 shell: spawnCommand.shell,
                 signal,
                 stdio: ["ignore", stdoutFile.fd, stderrFile.fd],
@@ -568,6 +578,11 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       const timeoutMs = input.timeoutMs ?? DEFAULT_OPENCODE_SERVER_TIMEOUT_MS;
       const args = ["serve", `--hostname=${hostname}`, `--port=${port}`];
       const spawnCommand = yield* resolveCommand(input.binaryPath, args, input.environment);
+      const azureConfig = yield* Effect.promise(() => discoverEnabledAzureOpenCodeConfig());
+      const opencodeConfigContent =
+        Object.keys(azureConfig).length > 0
+          ? encodeUnknownJsonString(azureConfig)
+          : OPENCODE_EMPTY_CONFIG_CONTENT;
 
       const child = yield* spawner
         .spawn(
@@ -576,7 +591,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
             shell: spawnCommand.shell,
             env: {
               ...input.environment,
-              OPENCODE_CONFIG_CONTENT: OPENCODE_EMPTY_CONFIG_CONTENT,
+              OPENCODE_CONFIG_CONTENT: opencodeConfigContent,
             },
             extendEnv: input.environment === undefined,
           }),
@@ -822,29 +837,40 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
 
   const loadInventoryFromCli: OpenCodeRuntimeShape["loadInventoryFromCli"] = (input) =>
     Effect.gen(function* () {
-      const env = input.environment !== undefined ? { environment: input.environment } : ({} as {});
+      const environment = input.environment ?? process.env;
+      const azureConfig = yield* Effect.promise(() => discoverEnabledAzureOpenCodeConfig());
+      const skillsEnvironment =
+        Object.keys(azureConfig).length > 0
+          ? {
+              ...environment,
+              OPENCODE_CONFIG_CONTENT: encodeUnknownJsonString(azureConfig),
+            }
+          : environment;
 
       const runModelsCli = () =>
         runOpenCodeCommand({
           binaryPath: input.binaryPath,
           args: ["models", "--verbose"],
-          ...env,
+          environment,
         }).pipe(Effect.exit);
       const runAgentsCli = () =>
-        runOpenCodeCommand({ binaryPath: input.binaryPath, args: ["agent", "list"], ...env }).pipe(
-          Effect.exit,
-        );
+        runOpenCodeCommand({
+          binaryPath: input.binaryPath,
+          args: ["agent", "list"],
+          environment,
+        }).pipe(Effect.exit);
       const runSkillsCli = () =>
         runOpenCodeCommand({
           binaryPath: input.binaryPath,
           args: ["debug", "skill", "--log-level", "ERROR"],
-          ...env,
+          environment: skillsEnvironment,
+          isolatedDataHome: true,
         }).pipe(Effect.exit);
       const runConfigCli = () =>
         runOpenCodeCommand({
           binaryPath: input.binaryPath,
           args: ["debug", "config", "--log-level", "ERROR"],
-          ...env,
+          environment,
         }).pipe(Effect.exit);
 
       // Run inventory commands in parallel, then retry any transient failure once.

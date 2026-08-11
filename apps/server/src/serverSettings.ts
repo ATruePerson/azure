@@ -52,7 +52,11 @@ const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
-const PROVIDER_API_KEY_ENVIRONMENT_NAMES = new Set(["NVIDIA_API_KEY", "OPENROUTER_API_KEY"]);
+const PROVIDER_API_KEY_ENVIRONMENT_NAMES = new Set([
+  "NVIDIA_API_KEY",
+  "OPENROUTER_API_KEY",
+  "OPENCODE_ZEN_API_KEY",
+]);
 
 function validateProviderEnvironmentSecrets(
   settings: ServerSettings,

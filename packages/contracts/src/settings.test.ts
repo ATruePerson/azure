@@ -7,6 +7,7 @@ import {
   ClientSettingsPatch,
   DEFAULT_SERVER_SETTINGS,
   NVIDIA_NIM_DEFAULT_BASE_URL,
+  OPENCODE_ZEN_DEFAULT_BASE_URL,
   OPENROUTER_DEFAULT_BASE_URL,
   ServerSettings,
   ServerSettingsPatch,
@@ -126,6 +127,7 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
     expect(decoded.providers.codex.enabled).toBe(true);
     expect(decoded.providers.nvidiaNim.baseUrl).toBe(NVIDIA_NIM_DEFAULT_BASE_URL);
     expect(decoded.providers.openrouter.baseUrl).toBe(OPENROUTER_DEFAULT_BASE_URL);
+    expect(decoded.providers.opencodeZen.baseUrl).toBe(OPENCODE_ZEN_DEFAULT_BASE_URL);
   });
 
   it("accepts base URL patches for first-party HTTP providers", () => {
@@ -134,11 +136,13 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
         providers: {
           nvidiaNim: { baseUrl: "https://nim.example/v1" },
           openrouter: { baseUrl: "https://router.example/v1" },
+          opencodeZen: { baseUrl: "https://zen.example/v1" },
         },
       }).providers,
     ).toEqual({
       nvidiaNim: { baseUrl: "https://nim.example/v1" },
       openrouter: { baseUrl: "https://router.example/v1" },
+      opencodeZen: { baseUrl: "https://zen.example/v1" },
     });
   });
 

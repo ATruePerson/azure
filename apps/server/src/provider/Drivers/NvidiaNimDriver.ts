@@ -19,6 +19,8 @@ export const NvidiaNimDriver = makeOpenAICompatibleDriver<NvidiaNimSettingsType>
       baseUrl: NVIDIA_NIM_DEFAULT_BASE_URL,
     }),
   allowedBearerOrigins: new Set([new URL(NVIDIA_NIM_DEFAULT_BASE_URL).origin]),
+  disabledMessage: "NVIDIA is disabled in Azure settings.",
+  authenticatedMessage: "NVIDIA authenticated via API key.",
 });
 
 export { DRIVER_KIND as NVIDIA_NIM_DRIVER_KIND };

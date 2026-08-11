@@ -22,6 +22,7 @@ import {
 import { createModelSelection } from "@t3tools/shared/model";
 import { it, assert, vi } from "@effect/vitest";
 
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -841,6 +842,267 @@ it.effect(
 );
 
 routing.layer("ProviderServiceLive routing", (it) => {
+  it.effect("keeps a recovered Azure instruction reservation after an older send fails", () =>
+    Effect.gen(function* () {
+      const cwd = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "azure-project-rules-"));
+      NodeFS.writeFileSync(NodePath.join(cwd, "AZURE.md"), "Follow Azure project rules.");
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-concurrent-azure-project-rules");
+      const oldTurnStarted = yield* Deferred.make<void>();
+      const failOldTurn = yield* Deferred.make<void>();
+      const newTurnStarted = yield* Deferred.make<void>();
+      const releaseNewTurn = yield* Deferred.make<void>();
+
+      yield* provider.startSession(threadId, {
+        provider: CURSOR_DRIVER,
+        providerInstanceId: ProviderInstanceId.make("cursor"),
+        threadId,
+        cwd,
+        runtimeMode: "full-access",
+      });
+      routing.cursor.sendTurn.mockImplementationOnce((input) =>
+        Deferred.succeed(oldTurnStarted, undefined).pipe(
+          Effect.andThen(Deferred.await(failOldTurn)),
+          Effect.andThen(
+            Effect.fail(
+              new ProviderAdapterRequestError({
+                provider: String(CURSOR_DRIVER),
+                method: "sendTurn",
+                detail: `simulated failure for ${String(input.threadId)}`,
+              }),
+            ),
+          ),
+        ),
+      );
+
+      const oldTurn = yield* provider
+        .sendTurn({ threadId, input: "Old", attachments: [] })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(oldTurnStarted);
+
+      yield* routing.cursor.stopAll();
+      routing.cursor.sendTurn.mockImplementationOnce((input) =>
+        Deferred.succeed(newTurnStarted, undefined).pipe(
+          Effect.andThen(Deferred.await(releaseNewTurn)),
+          Effect.as({
+            threadId: input.threadId,
+            turnId: TurnId.make(`turn-${String(input.threadId)}`),
+          }),
+        ),
+      );
+      const newTurn = yield* provider
+        .sendTurn({ threadId, input: "New", attachments: [] })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(newTurnStarted);
+
+      yield* Deferred.succeed(failOldTurn, undefined);
+      assert.equal(Exit.isFailure(yield* Fiber.await(oldTurn)), true);
+      yield* provider.sendTurn({ threadId, input: "Third", attachments: [] });
+
+      assert.deepEqual(
+        routing.cursor.sendTurn.mock.calls.map(([input]) => input.input),
+        ["Follow Azure project rules.\n\nOld", "Follow Azure project rules.\n\nNew", "Third"],
+      );
+      yield* Deferred.succeed(releaseNewTurn, undefined);
+      yield* Fiber.join(newTurn);
+      routing.cursor.sendTurn.mockClear();
+
+      yield* provider.stopSession({ threadId });
+      NodeFS.rmSync(cwd, { recursive: true, force: true });
+    }),
+  );
+
+  it.effect("does not let an older send mark recovered Azure instructions as processed", () =>
+    Effect.gen(function* () {
+      const cwd = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "azure-project-rules-"));
+      NodeFS.writeFileSync(NodePath.join(cwd, "AZURE.md"), "Follow Azure project rules.");
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-stale-azure-project-rules-success");
+      const oldTurnStarted = yield* Deferred.make<void>();
+      const releaseOldTurn = yield* Deferred.make<void>();
+      const newTurnStarted = yield* Deferred.make<void>();
+      const failNewTurn = yield* Deferred.make<void>();
+
+      yield* provider.startSession(threadId, {
+        provider: CURSOR_DRIVER,
+        providerInstanceId: ProviderInstanceId.make("cursor"),
+        threadId,
+        cwd,
+        runtimeMode: "full-access",
+      });
+      routing.cursor.sendTurn.mockImplementationOnce((input) =>
+        Deferred.succeed(oldTurnStarted, undefined).pipe(
+          Effect.andThen(Deferred.await(releaseOldTurn)),
+          Effect.as({
+            threadId: input.threadId,
+            turnId: TurnId.make(`turn-${String(input.threadId)}`),
+          }),
+        ),
+      );
+      const oldTurn = yield* provider
+        .sendTurn({ threadId, input: "Old", attachments: [] })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(oldTurnStarted);
+
+      yield* routing.cursor.stopAll();
+      routing.cursor.sendTurn.mockImplementationOnce((input) =>
+        Deferred.succeed(newTurnStarted, undefined).pipe(
+          Effect.andThen(Deferred.await(failNewTurn)),
+          Effect.andThen(
+            Effect.fail(
+              new ProviderAdapterRequestError({
+                provider: String(CURSOR_DRIVER),
+                method: "sendTurn",
+                detail: `simulated failure for ${String(input.threadId)}`,
+              }),
+            ),
+          ),
+        ),
+      );
+      const newTurn = yield* provider
+        .sendTurn({ threadId, input: "New", attachments: [] })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(newTurnStarted);
+
+      yield* Deferred.succeed(releaseOldTurn, undefined);
+      yield* Fiber.join(oldTurn);
+      yield* Deferred.succeed(failNewTurn, undefined);
+      assert.equal(Exit.isFailure(yield* Fiber.await(newTurn)), true);
+      yield* provider.sendTurn({ threadId, input: "Third", attachments: [] });
+
+      assert.deepEqual(
+        routing.cursor.sendTurn.mock.calls.map(([input]) => input.input),
+        [
+          "Follow Azure project rules.\n\nOld",
+          "Follow Azure project rules.\n\nNew",
+          "Follow Azure project rules.\n\nThird",
+        ],
+      );
+      routing.cursor.sendTurn.mockClear();
+
+      yield* provider.stopSession({ threadId });
+      NodeFS.rmSync(cwd, { recursive: true, force: true });
+    }),
+  );
+
+  it.effect("does not restore processed Azure instructions from an older follow-up", () =>
+    Effect.gen(function* () {
+      const cwd = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "azure-project-rules-"));
+      NodeFS.writeFileSync(NodePath.join(cwd, "AZURE.md"), "Follow Azure project rules.");
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-stale-azure-project-rules-follow-up");
+      const oldTurnStarted = yield* Deferred.make<void>();
+      const releaseOldTurn = yield* Deferred.make<void>();
+      const newTurnStarted = yield* Deferred.make<void>();
+      const failNewTurn = yield* Deferred.make<void>();
+
+      yield* provider.startSession(threadId, {
+        provider: CURSOR_DRIVER,
+        providerInstanceId: ProviderInstanceId.make("cursor"),
+        threadId,
+        cwd,
+        runtimeMode: "full-access",
+      });
+      yield* provider.sendTurn({ threadId, input: "Initial", attachments: [] });
+      routing.cursor.sendTurn.mockImplementationOnce((input) =>
+        Deferred.succeed(oldTurnStarted, undefined).pipe(
+          Effect.andThen(Deferred.await(releaseOldTurn)),
+          Effect.as({
+            threadId: input.threadId,
+            turnId: TurnId.make(`turn-${String(input.threadId)}`),
+          }),
+        ),
+      );
+      const oldTurn = yield* provider
+        .sendTurn({ threadId, input: "Old follow-up", attachments: [] })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(oldTurnStarted);
+
+      yield* routing.cursor.stopAll();
+      routing.cursor.sendTurn.mockImplementationOnce((input) =>
+        Deferred.succeed(newTurnStarted, undefined).pipe(
+          Effect.andThen(Deferred.await(failNewTurn)),
+          Effect.andThen(
+            Effect.fail(
+              new ProviderAdapterRequestError({
+                provider: String(CURSOR_DRIVER),
+                method: "sendTurn",
+                detail: `simulated failure for ${String(input.threadId)}`,
+              }),
+            ),
+          ),
+        ),
+      );
+      const newTurn = yield* provider
+        .sendTurn({ threadId, input: "New", attachments: [] })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(newTurnStarted);
+
+      yield* Deferred.succeed(failNewTurn, undefined);
+      assert.equal(Exit.isFailure(yield* Fiber.await(newTurn)), true);
+      yield* Deferred.succeed(releaseOldTurn, undefined);
+      yield* Fiber.join(oldTurn);
+      yield* provider.sendTurn({ threadId, input: "Third", attachments: [] });
+
+      assert.deepEqual(
+        routing.cursor.sendTurn.mock.calls.map(([input]) => input.input),
+        [
+          "Follow Azure project rules.\n\nInitial",
+          "Old follow-up",
+          "Follow Azure project rules.\n\nNew",
+          "Follow Azure project rules.\n\nThird",
+        ],
+      );
+      routing.cursor.sendTurn.mockClear();
+
+      yield* provider.stopSession({ threadId });
+      NodeFS.rmSync(cwd, { recursive: true, force: true });
+    }),
+  );
+
+  it.effect("injects Azure instructions once per provider session and again after recovery", () =>
+    Effect.gen(function* () {
+      const cwd = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "azure-project-rules-"));
+      NodeFS.writeFileSync(NodePath.join(cwd, "AZURE.md"), "Follow Azure project rules.");
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-azure-project-rules");
+
+      yield* provider.startSession(threadId, {
+        provider: CURSOR_DRIVER,
+        providerInstanceId: ProviderInstanceId.make("cursor"),
+        threadId,
+        cwd,
+        runtimeMode: "full-access",
+      });
+      yield* provider.sendTurn({
+        threadId,
+        attachments: [
+          {
+            type: "image",
+            id: "image-1",
+            name: "image.png",
+            mimeType: "image/png",
+            sizeBytes: 1,
+          },
+        ],
+      });
+      yield* provider.sendTurn({ threadId, input: "Follow up", attachments: [] });
+
+      assert.equal(routing.cursor.sendTurn.mock.calls[0]?.[0].input, "Follow Azure project rules.");
+      assert.equal(routing.cursor.sendTurn.mock.calls[1]?.[0].input, "Follow up");
+
+      yield* routing.cursor.stopAll();
+      yield* provider.sendTurn({ threadId, input: "Recovered", attachments: [] });
+      assert.equal(
+        routing.cursor.sendTurn.mock.calls[2]?.[0].input,
+        "Follow Azure project rules.\n\nRecovered",
+      );
+
+      yield* provider.stopSession({ threadId });
+      NodeFS.rmSync(cwd, { recursive: true, force: true });
+    }),
+  );
+
   it.effect("routes provider operations and rollback conversation", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;

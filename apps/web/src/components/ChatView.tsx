@@ -145,6 +145,7 @@ import {
 } from "../previewMiniPlayerStore";
 import { RightPanelTabs } from "./RightPanelTabs";
 import { AgentsPanel } from "./AgentsPanel";
+import { ProgressPanel } from "./ProgressPanel";
 import {
   deriveAgentPanelModel,
   foldSubagentActivities,
@@ -2203,6 +2204,25 @@ function ChatViewContent(props: ChatViewProps) {
     () => deriveActivePlanState(threadActivities, activeLatestTurn?.turnId ?? undefined),
     [activeLatestTurn?.turnId, threadActivities],
   );
+  const autoOpenedProgressPlanKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!activeThreadRef || !activePlan || activePlan.steps.length < 2) return;
+    const planKey = `${activePlan.turnId ?? "thread"}:${activePlan.createdAt}`;
+    if (autoOpenedProgressPlanKeyRef.current === planKey) return;
+    autoOpenedProgressPlanKeyRef.current = planKey;
+    const current = selectThreadRightPanelState(
+      useRightPanelStore.getState().byThreadKey,
+      activeThreadRef,
+    );
+    if (
+      current.isOpen &&
+      current.activeSurfaceId !== null &&
+      current.activeSurfaceId !== "progress"
+    ) {
+      return;
+    }
+    useRightPanelStore.getState().open(activeThreadRef, "progress");
+  }, [activePlan, activeThreadRef]);
   // Current step for the in-chat working row: only for the running turn's own
   // plan (deriveActivePlanState falls back to older turns' plans, which must
   // not label fresh work). Falls back to the first pending step so an
@@ -3218,6 +3238,10 @@ function ChatViewContent(props: ChatViewProps) {
   const addAgentsSurface = useCallback(() => {
     if (!activeThreadRef) return;
     useRightPanelStore.getState().open(activeThreadRef, "agents");
+  }, [activeThreadRef]);
+  const addProgressSurface = useCallback(() => {
+    if (!activeThreadRef) return;
+    useRightPanelStore.getState().open(activeThreadRef, "progress");
   }, [activeThreadRef]);
   const openFileSurface = useCallback(
     (relativePath: string) => {
@@ -5982,6 +6006,8 @@ function ChatViewContent(props: ChatViewProps) {
         environmentId={activeThreadRef?.environmentId ?? null}
         threadId={activeThreadRef?.threadId ?? null}
       />
+    ) : activeRightPanelSurface?.kind === "progress" ? (
+      <ProgressPanel plan={activePlan} />
     ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
       activeProject &&
       activeWorkspaceRoot ? (
@@ -6416,6 +6442,7 @@ function ChatViewContent(props: ChatViewProps) {
           onAddDiff={addDiffSurface}
           onAddFiles={addFilesSurface}
           onAddAgents={addAgentsSurface}
+          onAddProgress={addProgressSurface}
           browserAvailable={isPreviewSupportedInRuntime()}
           diffAvailable={isServerThread && isGitRepo}
           filesAvailable={activeProject !== null}
@@ -6444,6 +6471,7 @@ function ChatViewContent(props: ChatViewProps) {
             onAddDiff={addDiffSurface}
             onAddFiles={addFilesSurface}
             onAddAgents={addAgentsSurface}
+            onAddProgress={addProgressSurface}
             browserAvailable={isPreviewSupportedInRuntime()}
             diffAvailable={isServerThread && isGitRepo}
             filesAvailable={activeProject !== null}

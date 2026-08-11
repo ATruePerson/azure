@@ -12,6 +12,22 @@ import {
 
 const DEFAULT_PROVIDER_DRIVER_KIND = ProviderDriverKind.make("codex");
 
+/** Provider metadata fallback used only when an endpoint omits context metadata. */
+export function resolveModelContextWindow(input: {
+  readonly provider: ProviderDriverKind | string;
+  readonly model: string | undefined;
+  readonly discovered?: number;
+}): number | undefined {
+  if (input.discovered && Number.isFinite(input.discovered) && input.discovered > 0) {
+    return Math.floor(input.discovered);
+  }
+  const model = input.model?.toLowerCase();
+  if (String(input.provider) !== "nvidiaNim" || !model) return undefined;
+  if (model === "nvidia/nemotron-3-ultra-550b-a55b") return 1_000_000;
+  if (model === "stepfun-ai/step-3.7-flash") return 262_144;
+  return undefined;
+}
+
 export interface SelectableModelOption {
   slug: string;
   name: string;
@@ -19,9 +35,13 @@ export interface SelectableModelOption {
 
 export function createModelCapabilities(input: {
   optionDescriptors: ReadonlyArray<ProviderOptionDescriptor>;
+  contextWindowTokens?: number;
+  functionToolSupport?: ModelCapabilities["functionToolSupport"];
 }): ModelCapabilities {
   return {
     optionDescriptors: input.optionDescriptors.map(cloneDescriptor),
+    ...(input.contextWindowTokens ? { contextWindowTokens: input.contextWindowTokens } : {}),
+    ...(input.functionToolSupport ? { functionToolSupport: input.functionToolSupport } : {}),
   };
 }
 

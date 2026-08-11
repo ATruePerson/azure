@@ -1,4 +1,4 @@
-// This file mostly exists because we want dev mode to say "Azure Code" instead of "electron"
+// Keep the development window identity aligned with the packaged Azure Code app.
 
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
@@ -243,10 +243,10 @@ function patchMainBundleInfoPlist(appBundlePath, iconPath, executableName) {
 
 function patchHelperBundleInfoPlists(appBundlePath) {
   const helperBundleNames = [
-    ["Electron Helper.app", "helper", `${APP_DISPLAY_NAME} Helper`],
-    ["Electron Helper (GPU).app", "helper.gpu", `${APP_DISPLAY_NAME} Helper (GPU)`],
-    ["Electron Helper (Plugin).app", "helper.plugin", `${APP_DISPLAY_NAME} Helper (Plugin)`],
-    ["Electron Helper (Renderer).app", "helper.renderer", `${APP_DISPLAY_NAME} Helper (Renderer)`],
+    ["Electron Helper.app", "helper", "Electron Helper"],
+    ["Electron Helper (GPU).app", "helper.gpu", "Electron Helper (GPU)"],
+    ["Electron Helper (Plugin).app", "helper.plugin", "Electron Helper (Plugin)"],
+    ["Electron Helper (Renderer).app", "helper.renderer", "Electron Helper (Renderer)"],
   ];
 
   for (const [bundleName, bundleIdentifierSuffix, bundleDisplayName] of helperBundleNames) {
@@ -269,6 +269,11 @@ function patchHelperBundleInfoPlists(appBundlePath) {
       "CFBundleIdentifier",
       `${APP_BUNDLE_ID}.${bundleIdentifierSuffix}`,
     );
+  }
+
+  const frameworksDir = NodePath.join(appBundlePath, "Contents", "Frameworks");
+  if (NodeFS.existsSync(frameworksDir)) {
+    NodeFS.writeFileSync(NodePath.join(frameworksDir, ".metadata_never_index"), "");
   }
 }
 
@@ -348,7 +353,7 @@ function buildMacLauncher(electronBinaryPath) {
   if (isDevelopment) {
     // Keep Electron's native executable inside the branded bundle. Launching the
     // node_modules copy makes macOS associate the process (and Dock label) with
-    // Electron.app even though this bundle's Info.plist has the Azure Code name.
+    // Electron.app even though this bundle's Info.plist has the Azure name.
     // Its conventional executable name also keeps Electron's default-app runtime
     // in development mode instead of making app.isPackaged report true.
     writeDevelopmentLauncherScript(launcherBinaryPath, runtimeElectronBinaryPath);

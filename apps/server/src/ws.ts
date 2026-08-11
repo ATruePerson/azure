@@ -19,6 +19,10 @@ import {
   CodexCapabilitiesError,
   type DiscoveredLocalServerList,
   EventId,
+  MessageId,
+  ProviderInstanceId,
+  type ModelSelection,
+  type RuntimeMode,
   type OrchestrationCommand,
   type GitActionProgressEvent,
   type GitManagerServiceError,
@@ -58,6 +62,7 @@ import {
   type TerminalMetadataStreamEvent,
   WS_METHODS,
   WsRpcGroup,
+  ScheduledTaskError,
 } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
 import { HttpRouter, HttpServerRequest, HttpServerRespondable } from "effect/unstable/http";
@@ -81,7 +86,14 @@ import {
 } from "./observability/RpcInstrumentation.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
 import {
+  discoverAzureHomeCapabilities,
+  setAzureHomeCapabilityEnabled,
+  setAzureHomeSkillEnabled,
+} from "./provider/AzureHomeCapabilities.ts";
+import {
   loadCodexCapabilities,
+  codexCapabilityFailureCategory,
+  codexCapabilityFailureTag,
   resolveCodexCapabilitiesTarget,
   setCodexConfigEnabled,
   setCodexSkillEnabled,
@@ -126,6 +138,13 @@ import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
 import * as VcsProcess from "./vcs/VcsProcess.ts";
+import {
+  claimScheduledTask,
+  finishScheduledTask,
+  readScheduledTasks,
+  setScheduledTaskEnabled,
+  upsertScheduledTask,
+} from "./scheduledTasks.ts";
 import * as PairingGrantStore from "./auth/PairingGrantStore.ts";
 import * as SessionStore from "./auth/SessionStore.ts";
 import { failEnvironmentAuthInvalid, failEnvironmentInternal } from "./auth/http.ts";
@@ -452,6 +471,13 @@ const makeWsRpcLayer = (
           authorizeEffect(requiredScopeForRpcMethod(method), effect),
           traceAttributes,
         );
+      const mapCodexCapabilitiesError = (cause: unknown) =>
+        new CodexCapabilitiesError({ category: codexCapabilityFailureCategory(cause) });
+      const logCodexCapabilitiesError = (cause: unknown) =>
+        Effect.logWarning("Azure integration capability request failed", {
+          category: codexCapabilityFailureCategory(cause),
+          causeTag: codexCapabilityFailureTag(cause),
+        });
       const observeRpcStream = <A, E, R>(
         method: string,
         stream: Stream.Stream<A, E, R>,
@@ -1493,18 +1519,9 @@ const makeWsRpcLayer = (
         [WS_METHODS.serverGetCodexCapabilities]: (input) =>
           observeRpcEffect(
             WS_METHODS.serverGetCodexCapabilities,
-            Effect.gen(function* () {
-              const settings = yield* serverSettings.getSettings;
-              const target = yield* resolveCodexCapabilitiesTarget(
-                deriveProviderInstanceConfigMap(settings)[input.instanceId],
-              );
-              return yield* loadCodexCapabilities({
-                settings: target.settings,
-                cwd: config.cwd,
-                environment: target.environment,
-              });
-            }).pipe(
-              Effect.mapError((cause) => new CodexCapabilitiesError({ cause })),
+            Effect.promise(() => discoverAzureHomeCapabilities()).pipe(
+              Effect.tapError(logCodexCapabilitiesError),
+              Effect.mapError(mapCodexCapabilitiesError),
               Effect.scoped,
             ),
             { "rpc.aggregate": "server" },
@@ -1524,8 +1541,210 @@ const makeWsRpcLayer = (
                 environment: target.environment,
               });
             }).pipe(
-              Effect.mapError((cause) => new CodexCapabilitiesError({ cause })),
+              Effect.tapError(logCodexCapabilitiesError),
+              Effect.mapError(mapCodexCapabilitiesError),
               Effect.scoped,
+            ),
+            { "rpc.aggregate": "server" },
+          ),
+        [WS_METHODS.serverSetAzureSkillEnabled]: (skill) =>
+          observeRpcEffect(
+            WS_METHODS.serverSetAzureSkillEnabled,
+            Effect.promise(() => setAzureHomeSkillEnabled(skill.id, skill.enabled)).pipe(
+              Effect.tapError(logCodexCapabilitiesError),
+              Effect.mapError(mapCodexCapabilitiesError),
+              Effect.scoped,
+            ),
+            { "rpc.aggregate": "server" },
+          ),
+        [WS_METHODS.serverSetAzureCapabilityEnabled]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverSetAzureCapabilityEnabled,
+            Effect.promise(() =>
+              setAzureHomeCapabilityEnabled(input.kind, input.id, input.enabled),
+            ).pipe(
+              Effect.tapError(logCodexCapabilitiesError),
+              Effect.mapError(mapCodexCapabilitiesError),
+              Effect.scoped,
+            ),
+            { "rpc.aggregate": "server" },
+          ),
+        [WS_METHODS.serverGetScheduledTasks]: () =>
+          observeRpcEffect(
+            WS_METHODS.serverGetScheduledTasks,
+            Effect.tryPromise({
+              try: () => readScheduledTasks(),
+              catch: (cause) =>
+                new ScheduledTaskError({
+                  message:
+                    cause instanceof Error ? cause.message : "Could not read scheduled tasks.",
+                }),
+            }),
+            { "rpc.aggregate": "server" },
+          ),
+        [WS_METHODS.serverUpsertScheduledTask]: (task) =>
+          observeRpcEffect(
+            WS_METHODS.serverUpsertScheduledTask,
+            Effect.tryPromise({
+              try: () => upsertScheduledTask(task),
+              catch: (cause) =>
+                new ScheduledTaskError({
+                  message:
+                    cause instanceof Error ? cause.message : "Could not save scheduled task.",
+                }),
+            }),
+            { "rpc.aggregate": "server" },
+          ),
+        [WS_METHODS.serverSetScheduledTaskEnabled]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverSetScheduledTaskEnabled,
+            Effect.tryPromise({
+              try: () => setScheduledTaskEnabled(input.id, input.enabled),
+              catch: (cause) =>
+                new ScheduledTaskError({
+                  message:
+                    cause instanceof Error ? cause.message : "Could not update scheduled task.",
+                }),
+            }),
+            { "rpc.aggregate": "server" },
+          ),
+        [WS_METHODS.serverRunScheduledTask]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverRunScheduledTask,
+            Effect.gen(function* () {
+              const task = yield* Effect.tryPromise({
+                try: () => claimScheduledTask(input.id),
+                catch: (cause) =>
+                  new ScheduledTaskError({
+                    message:
+                      cause instanceof Error ? cause.message : "Could not run scheduled task.",
+                  }),
+              });
+              if (!task)
+                return yield* new ScheduledTaskError({
+                  message: "Scheduled task is paused, not due, or already running.",
+                });
+              const modelSelection: ModelSelection = {
+                instanceId: ProviderInstanceId.make(task.providerId),
+                model: task.modelId,
+                ...(task.effort
+                  ? { options: [{ id: "reasoningEffort", value: task.effort }] }
+                  : {}),
+              };
+              const runtimeMode = task.sandboxMode as RuntimeMode;
+              if (
+                !["approval-required", "auto-accept-edits", "auto", "full-access"].includes(
+                  runtimeMode,
+                )
+              ) {
+                return yield* new ScheduledTaskError({
+                  message: `Unsupported scheduled task sandbox mode '${task.sandboxMode}'.`,
+                });
+              }
+              let threadId: ThreadId;
+              let projectId: ProjectId | undefined;
+              if (task.threadMode.type === "continue") {
+                threadId = ThreadId.make(task.threadMode.threadId);
+                const existing = yield* projectionSnapshotQuery.getThreadShellById(threadId);
+                if (Option.isNone(existing)) {
+                  return yield* new ScheduledTaskError({
+                    message: "The scheduled task target thread no longer exists.",
+                  });
+                }
+              } else {
+                const project = yield* projectionSnapshotQuery.getActiveProjectByWorkspaceRoot(
+                  task.projectPath,
+                );
+                if (Option.isNone(project)) {
+                  return yield* new ScheduledTaskError({
+                    message: "The scheduled task project is not open in Azure Code.",
+                  });
+                }
+                projectId = project.value.id;
+                threadId = ThreadId.make(yield* randomUUID);
+              }
+              const command = {
+                type: "thread.turn.start" as const,
+                commandId: yield* serverCommandId("scheduled-task-run"),
+                threadId,
+                message: {
+                  messageId: MessageId.make(yield* randomUUID),
+                  role: "user" as const,
+                  text: task.prompt,
+                  attachments: [],
+                },
+                modelSelection,
+                runtimeMode,
+                interactionMode: "default" as const,
+                createdAt: yield* nowIso,
+                ...(task.threadMode.type === "standalone"
+                  ? {
+                      bootstrap: {
+                        createThread: {
+                          projectId: projectId!,
+                          title: task.name,
+                          modelSelection,
+                          runtimeMode,
+                          interactionMode: "default" as const,
+                          branch: null,
+                          worktreePath: null,
+                          createdAt: yield* nowIso,
+                        },
+                        ...(task.workspaceMode === "worktree"
+                          ? {
+                              prepareWorktree: {
+                                projectCwd: task.projectPath,
+                                baseBranch: "HEAD",
+                                branch: `azure/scheduled/${task.id}-${Date.now()}`.slice(0, 120),
+                                startFromOrigin: false,
+                              },
+                            }
+                          : {}),
+                      },
+                    }
+                  : {}),
+              } satisfies OrchestrationCommand;
+              yield* orchestrationEngine
+                .dispatch(command)
+                .pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new ScheduledTaskError({
+                        message:
+                          cause instanceof Error
+                            ? cause.message
+                            : "Could not start scheduled task thread.",
+                      }),
+                  ),
+                );
+              yield* Effect.tryPromise({
+                try: () =>
+                  upsertScheduledTask({
+                    ...task,
+                    recentRunThreadIds: [...task.recentRunThreadIds, String(threadId)].slice(-20),
+                  }),
+                catch: (cause) =>
+                  new ScheduledTaskError({
+                    message:
+                      cause instanceof Error
+                        ? cause.message
+                        : "Could not record scheduled task run.",
+                  }),
+              });
+              finishScheduledTask(task.id);
+              return {
+                ...task,
+                recentRunThreadIds: [...task.recentRunThreadIds, String(threadId)].slice(-20),
+              };
+            }).pipe(
+              Effect.mapError((cause) =>
+                cause instanceof ScheduledTaskError
+                  ? cause
+                  : new ScheduledTaskError({
+                      message:
+                        cause instanceof Error ? cause.message : "Could not run scheduled task.",
+                    }),
+              ),
             ),
             { "rpc.aggregate": "server" },
           ),
@@ -1548,7 +1767,8 @@ const makeWsRpcLayer = (
                 environment: target.environment,
               });
             }).pipe(
-              Effect.mapError((cause) => new CodexCapabilitiesError({ cause })),
+              Effect.tapError(logCodexCapabilitiesError),
+              Effect.mapError(mapCodexCapabilitiesError),
               Effect.scoped,
             ),
             { "rpc.aggregate": "server" },

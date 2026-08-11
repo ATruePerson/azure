@@ -10,6 +10,7 @@
  * @module ProviderServiceLive
  */
 import {
+  EventId,
   ModelSelection,
   NonNegativeInt,
   ThreadId,
@@ -18,12 +19,16 @@ import {
   ProviderRespondToUserInputInput,
   ProviderSendTurnInput,
   ProviderSessionStartInput,
+  ProviderTurnStartResult,
+  RuntimeItemId,
+  TurnId,
   ProviderStopSessionInput,
   type ProviderInstanceId,
   type ProviderDriverKind,
   type ProviderRuntimeEvent,
   type ProviderSession,
 } from "@t3tools/contracts";
+import { randomUUID } from "node:crypto";
 import { causeErrorTag } from "@t3tools/shared/observability";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -55,6 +60,10 @@ import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
 import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
+import {
+  executeAzureMemoryCommand,
+  prependAzureProjectInstructions,
+} from "../AzureProjectInstructions.ts";
 const isModelSelection = Schema.is(ModelSelection);
 
 /**
@@ -125,6 +134,7 @@ function toRuntimePayloadFromSession(
     readonly modelSelection?: unknown;
     readonly lastRuntimeEvent?: string;
     readonly lastRuntimeEventAt?: string;
+    readonly azureProjectInstructionsProcessed?: boolean;
   },
 ): Record<string, unknown> {
   return {
@@ -136,6 +146,9 @@ function toRuntimePayloadFromSession(
     ...(extra?.lastRuntimeEvent !== undefined ? { lastRuntimeEvent: extra.lastRuntimeEvent } : {}),
     ...(extra?.lastRuntimeEventAt !== undefined
       ? { lastRuntimeEventAt: extra.lastRuntimeEventAt }
+      : {}),
+    ...(extra?.azureProjectInstructionsProcessed !== undefined
+      ? { azureProjectInstructionsProcessed: extra.azureProjectInstructionsProcessed }
       : {}),
   };
 }
@@ -160,6 +173,18 @@ function readPersistedCwd(
   if (typeof rawCwd !== "string") return undefined;
   const trimmed = rawCwd.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function readAzureProjectInstructionsProcessed(
+  runtimePayload: ProviderSessionDirectory.ProviderRuntimeBinding["runtimePayload"],
+): boolean {
+  return (
+    runtimePayload !== null &&
+    typeof runtimePayload === "object" &&
+    !Array.isArray(runtimePayload) &&
+    "azureProjectInstructionsProcessed" in runtimePayload &&
+    runtimePayload.azureProjectInstructionsProcessed === true
+  );
 }
 
 const dieOnMissingBindingInstanceId = (
@@ -213,7 +238,36 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const registry = yield* ProviderAdapterRegistry.ProviderAdapterRegistry;
   const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
   const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
+  const azureProjectInstructionReservations = yield* Ref.make(new Map<ThreadId, symbol>());
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
+  const resetAzureProjectInstructionReservation = (threadId: ThreadId) =>
+    Ref.update(azureProjectInstructionReservations, (reservations) => {
+      if (!reservations.has(threadId)) return reservations;
+      const next = new Map(reservations);
+      next.delete(threadId);
+      return next;
+    });
+  const releaseAzureProjectInstructionReservation = (threadId: ThreadId, token: symbol) =>
+    Ref.update(azureProjectInstructionReservations, (reservations) => {
+      if (reservations.get(threadId) !== token) return reservations;
+      const next = new Map(reservations);
+      next.delete(threadId);
+      return next;
+    });
+  const ownsAzureProjectInstructionReservation = (threadId: ThreadId, token: symbol) =>
+    Ref.get(azureProjectInstructionReservations).pipe(
+      Effect.map((reservations) => reservations.get(threadId) === token),
+    );
+  const reserveAzureProjectInstructions = (threadId: ThreadId, processed: boolean) =>
+    processed
+      ? Effect.succeed(null)
+      : Ref.modify(azureProjectInstructionReservations, (reservations) => {
+          if (reservations.has(threadId)) return [null, reservations] as const;
+          const token = Symbol();
+          const next = new Map(reservations);
+          next.set(threadId, token);
+          return [token, next] as const;
+        });
   const prepareMcpSession = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) =>
     McpSessionRegistry.issueActiveMcpCredential({ threadId, providerInstanceId }).pipe(
       Effect.tap((credential) =>
@@ -237,6 +291,47 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       Effect.flatMap((canonicalEvent) => PubSub.publish(runtimeEventPubSub, canonicalEvent)),
       Effect.asVoid,
     );
+
+  const publishLocalAzureMemoryCommand = (input: {
+    readonly threadId: ThreadId;
+    readonly provider: ProviderDriverKind;
+    readonly providerInstanceId: ProviderInstanceId;
+    readonly model?: string;
+    readonly message: string;
+  }) =>
+    Effect.gen(function* () {
+      const turnId = TurnId.make(randomUUID());
+      const createdAt = yield* nowIso;
+      const base = {
+        provider: input.provider,
+        providerInstanceId: input.providerInstanceId,
+        threadId: input.threadId,
+        turnId,
+      } as const;
+      yield* publishRuntimeEvent({
+        ...base,
+        eventId: EventId.make(randomUUID()),
+        createdAt,
+        type: "turn.started",
+        payload: { ...(input.model ? { model: input.model } : {}) },
+      });
+      yield* publishRuntimeEvent({
+        ...base,
+        eventId: EventId.make(randomUUID()),
+        itemId: RuntimeItemId.make(`memory:${String(turnId)}`),
+        createdAt,
+        type: "content.delta",
+        payload: { streamKind: "assistant_text", delta: input.message },
+      });
+      yield* publishRuntimeEvent({
+        ...base,
+        eventId: EventId.make(randomUUID()),
+        createdAt,
+        type: "turn.completed",
+        payload: { state: "completed", stopReason: null },
+      });
+      return { threadId: input.threadId, turnId } satisfies ProviderTurnStartResult;
+    });
 
   const requireBindingInstanceId = (
     operation: string,
@@ -263,6 +358,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       readonly modelSelection?: unknown;
       readonly lastRuntimeEvent?: string;
       readonly lastRuntimeEventAt?: string;
+      readonly azureProjectInstructionsProcessed?: boolean;
     },
   ) =>
     Effect.gen(function* () {
@@ -293,7 +389,31 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         increment(providerRuntimeEventsTotal, {
           provider: canonicalEvent.provider,
           eventType: canonicalEvent.type,
-        }).pipe(Effect.andThen(publishRuntimeEvent(canonicalEvent))),
+        }).pipe(
+          Effect.andThen(publishRuntimeEvent(canonicalEvent)),
+          Effect.andThen(
+            canonicalEvent.type === "turn.completed"
+              ? registry.getByInstance(source.instanceId).pipe(
+                  Effect.flatMap((adapter) =>
+                    adapter.listSessions().pipe(
+                      Effect.flatMap((sessions) => {
+                        const session = sessions.find(
+                          (candidate) => candidate.threadId === canonicalEvent.threadId,
+                        );
+                        return session
+                          ? upsertSessionBinding(
+                              { ...session, providerInstanceId: source.instanceId },
+                              canonicalEvent.threadId,
+                            )
+                          : Effect.void;
+                      }),
+                    ),
+                  ),
+                  Effect.catch(() => Effect.void),
+                )
+              : Effect.void,
+          ),
+        ),
       ),
     );
 
@@ -383,7 +503,13 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             strategy: "adopt-existing",
             hasResumeCursor: existing.resumeCursor !== undefined,
           });
-          return { adapter, session: existing } as const;
+          return {
+            adapter,
+            session: existing,
+            azureProjectInstructionsProcessed: readAzureProjectInstructionsProcessed(
+              input.binding.runtimePayload,
+            ),
+          } as const;
         }
       }
 
@@ -417,16 +543,18 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         );
       }
 
+      yield* resetAzureProjectInstructionReservation(input.binding.threadId);
       yield* upsertSessionBinding(
         { ...resumed, providerInstanceId: bindingInstanceId },
         input.binding.threadId,
+        { azureProjectInstructionsProcessed: false },
       );
       yield* analytics.record("provider.session.recovered", {
         provider: resumed.provider,
         strategy: "resume-thread",
         hasResumeCursor: resumed.resumeCursor !== undefined,
       });
-      return { adapter, session: resumed } as const;
+      return { adapter, session: resumed, azureProjectInstructionsProcessed: false } as const;
     }).pipe(
       withMetrics({
         counter: providerSessionsTotal,
@@ -460,7 +588,11 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         instanceId,
         threadId: input.threadId,
         runtimeMode: binding.runtimeMode,
+        cwd: readPersistedCwd(binding.runtimePayload),
         isActive: true,
+        azureProjectInstructionsProcessed: readAzureProjectInstructionsProcessed(
+          binding.runtimePayload,
+        ),
       } as const;
     }
 
@@ -470,7 +602,11 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         instanceId,
         threadId: input.threadId,
         runtimeMode: binding.runtimeMode,
+        cwd: readPersistedCwd(binding.runtimePayload),
         isActive: false,
+        azureProjectInstructionsProcessed: readAzureProjectInstructionsProcessed(
+          binding.runtimePayload,
+        ),
       } as const;
     }
 
@@ -483,7 +619,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       instanceId,
       threadId: input.threadId,
       runtimeMode: recovered.session.runtimeMode,
+      cwd: recovered.session.cwd ?? readPersistedCwd(binding.runtimePayload),
       isActive: true,
+      azureProjectInstructionsProcessed: recovered.azureProjectInstructionsProcessed,
     } as const;
   });
 
@@ -559,7 +697,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         if (!instanceInfo.enabled) {
           return yield* toValidationError(
             "ProviderService.startSession",
-            `Provider instance '${resolvedInstanceId}' is disabled in T3 Code settings.`,
+            `Provider instance '${resolvedInstanceId}' is disabled in Azure settings.`,
           );
         }
         const persistedBinding = Option.getOrUndefined(yield* directory.getBinding(threadId));
@@ -619,8 +757,10 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           threadId,
           currentInstanceId: resolvedInstanceId,
         });
+        yield* resetAzureProjectInstructionReservation(threadId);
         yield* upsertSessionBinding(sessionWithInstance, threadId, {
           modelSelection: input.modelSelection,
+          azureProjectInstructionsProcessed: false,
         });
         yield* analytics.record("provider.session.started", {
           provider: sessionWithInstance.provider,
@@ -701,18 +841,80 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       // rather than issuing a new one: sessions that go a long time between
       // browser tool calls used to lose the toolkit outright.
       yield* McpSessionRegistry.touchActiveMcpThread(input.threadId);
-      const turn = yield* routed.adapter.sendTurn(input);
+      const reservedAzureProjectInstructions = yield* reserveAzureProjectInstructions(
+        input.threadId,
+        routed.azureProjectInstructionsProcessed,
+      );
+      let localAzureCommandHandled = false;
+      const turn = yield* Effect.gen(function* () {
+        const commandCwd = routed.cwd;
+        const memoryCommand =
+          input.input && commandCwd
+            ? yield* Effect.tryPromise(() =>
+                executeAzureMemoryCommand({ cwd: commandCwd, prompt: input.input! }),
+              ).pipe(Effect.orElseSucceed(() => undefined))
+            : undefined;
+        if (memoryCommand) {
+          localAzureCommandHandled = true;
+          if (reservedAzureProjectInstructions) {
+            yield* releaseAzureProjectInstructionReservation(
+              input.threadId,
+              reservedAzureProjectInstructions,
+            );
+          }
+          return yield* publishLocalAzureMemoryCommand({
+            threadId: input.threadId,
+            provider: routed.adapter.provider,
+            providerInstanceId: routed.instanceId,
+            ...(input.modelSelection?.model ? { model: input.modelSelection.model } : {}),
+            message: memoryCommand.message,
+          });
+        }
+        const routedInput = {
+          ...input,
+          input: yield* Effect.tryPromise(() =>
+            prependAzureProjectInstructions({
+              cwd: routed.cwd,
+              driver: routed.adapter.provider,
+              prompt: input.input,
+              ...(memoryCommand ? { memoryCommand } : {}),
+              includeProjectInstructions: reservedAzureProjectInstructions !== null,
+            }),
+          ).pipe(Effect.orElseSucceed(() => input.input)),
+        };
+        return yield* routed.adapter.sendTurn(routedInput);
+      }).pipe(
+        Effect.onError(() =>
+          reservedAzureProjectInstructions
+            ? releaseAzureProjectInstructionReservation(
+                input.threadId,
+                reservedAzureProjectInstructions,
+              )
+            : Effect.void,
+        ),
+      );
+      const ownsReservedAzureProjectInstructions = reservedAzureProjectInstructions
+        ? yield* ownsAzureProjectInstructionReservation(
+            input.threadId,
+            reservedAzureProjectInstructions,
+          )
+        : false;
       yield* directory.upsert({
         threadId: input.threadId,
         provider: routed.adapter.provider,
         providerInstanceId: routed.instanceId,
         status: "running",
-        ...(turn.resumeCursor !== undefined ? { resumeCursor: turn.resumeCursor } : {}),
+        ...("resumeCursor" in turn && turn.resumeCursor !== undefined
+          ? { resumeCursor: turn.resumeCursor }
+          : {}),
         runtimePayload: {
           ...(input.modelSelection !== undefined ? { modelSelection: input.modelSelection } : {}),
-          activeTurnId: turn.turnId,
+          activeTurnId: localAzureCommandHandled ? null : turn.turnId,
           lastRuntimeEvent: "provider.sendTurn",
           lastRuntimeEventAt: yield* nowIso,
+          ...(ownsReservedAzureProjectInstructions
+            ? { azureProjectInstructionsProcessed: true }
+            : {}),
         },
       });
       yield* analytics.record("provider.turn.sent", {
@@ -876,6 +1078,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           yield* routed.adapter.stopSession(routed.threadId);
         }
         yield* clearMcpSession(input.threadId);
+        yield* resetAzureProjectInstructionReservation(input.threadId);
         yield* directory.upsert({
           threadId: input.threadId,
           provider: routed.adapter.provider,

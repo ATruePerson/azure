@@ -13,11 +13,16 @@ import {
   BotIcon,
   SlidersHorizontalIcon,
   GitBranchIcon,
+  BookOpenIcon,
+  PlugIcon,
+  PuzzleIcon,
   KeyboardIcon,
   Link2Icon,
   PaletteIcon,
   SearchIcon,
   Settings2Icon,
+  WebhookIcon,
+  CalendarClockIcon,
   XIcon,
 } from "lucide-react";
 import { useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
@@ -51,6 +56,11 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/keybindings": KeyboardIcon,
   "/settings/providers": BotIcon,
   "/settings/capabilities": SlidersHorizontalIcon,
+  "/settings/hooks": WebhookIcon,
+  "/settings/plugins": PuzzleIcon,
+  "/settings/skills": BookOpenIcon,
+  "/settings/mcp": PlugIcon,
+  "/settings/scheduled-tasks": CalendarClockIcon,
   "/settings/source-control": GitBranchIcon,
   "/settings/connections": Link2Icon,
   "/settings/archived": ArchiveIcon,
@@ -60,11 +70,16 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
   label: string;
   to: SettingsPath;
   icon: ComponentType<{ className?: string }>;
-}> = (Object.keys(SETTINGS_SECTION_LABELS) as SettingsPath[]).map((to) => ({
-  to,
-  label: SETTINGS_SECTION_LABELS[to],
-  icon: SETTINGS_SECTION_ICONS[to],
-}));
+}> = (Object.keys(SETTINGS_SECTION_LABELS) as SettingsPath[])
+  .filter(
+    (to) =>
+      !["/settings/hooks", "/settings/plugins", "/settings/skills", "/settings/mcp"].includes(to),
+  )
+  .map((to) => ({
+    to,
+    label: SETTINGS_SECTION_LABELS[to],
+    icon: SETTINGS_SECTION_ICONS[to],
+  }));
 
 function SettingsSectionIcon({ to }: { to: SettingsPath }) {
   const Icon = SETTINGS_SECTION_ICONS[to];

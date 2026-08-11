@@ -10,7 +10,7 @@ import {
 } from "./ProviderSettingsForm";
 
 describe("ProviderSettingsForm helpers", () => {
-  it("lists NVIDIA and OpenRouter with their provider icons", () => {
+  it("lists API-key providers with their provider icons", () => {
     expect(PROVIDER_CLIENT_DEFINITIONS.map((definition) => definition.label)).toContain("NVIDIA");
     expect(PROVIDER_CLIENT_DEFINITIONS.map((definition) => definition.label)).toContain(
       "OpenRouter",
@@ -20,6 +20,9 @@ describe("ProviderSettingsForm helpers", () => {
     ).toBeDefined();
     expect(
       PROVIDER_CLIENT_DEFINITIONS.find((definition) => definition.label === "OpenRouter")?.icon,
+    ).toBeDefined();
+    expect(
+      PROVIDER_CLIENT_DEFINITIONS.find((definition) => definition.label === "OpenCode Zen")?.icon,
     ).toBeDefined();
   });
 
@@ -53,6 +56,7 @@ describe("ProviderSettingsForm helpers", () => {
   it.each([
     ["nvidiaNim", "https://integrate.api.nvidia.com/v1"],
     ["openrouter", "https://openrouter.ai/api/v1"],
+    ["opencodeZen", "https://opencode.ai/zen/v1"],
   ] as const)("exposes the %s base URL control", (driver, defaultBaseUrl) => {
     const definition = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make(driver)];
     expect(definition).toBeDefined();

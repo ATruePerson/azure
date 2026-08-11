@@ -111,7 +111,7 @@ describe("DesktopLinuxUrlHandler", () => {
     });
 
     assert.include(entry, "[Desktop Entry]");
-    assert.include(entry, "Name=Azure Code");
+    assert.include(entry, "Name=Azure");
     // Exec composes both escaping layers: a literal backslash becomes four
     // backslashes in the file, a quote three characters, a dollar sign two
     // backslashes plus the sign.

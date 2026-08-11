@@ -94,6 +94,9 @@ describe("ProviderInstanceConfig", () => {
     expect(PROVIDER_API_KEY_ENVIRONMENT_BY_DRIVER[ProviderDriverKind.make("openrouter")]).toBe(
       "OPENROUTER_API_KEY",
     );
+    expect(PROVIDER_API_KEY_ENVIRONMENT_BY_DRIVER[ProviderDriverKind.make("opencodeZen")]).toBe(
+      "OPENCODE_ZEN_API_KEY",
+    );
   });
 
   it("accepts a minimal config envelope for a driver", () => {

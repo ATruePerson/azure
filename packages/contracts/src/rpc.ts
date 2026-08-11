@@ -73,6 +73,8 @@ import {
   CodexCapabilitiesInput,
   CodexConfigEnabledInput,
   CodexSkillEnabledInput,
+  AzureSkillEnabledInput,
+  AzureCapabilityEnabledInput,
 } from "./codexCapabilities.ts";
 import {
   RelayClientInstallFailedError,
@@ -172,6 +174,12 @@ import {
   SourceControlRepositoryLookupInput,
 } from "./sourceControl.ts";
 import { VcsError } from "./vcs.ts";
+import {
+  ScheduledTask,
+  ScheduledTaskRunInput,
+  ScheduledTaskSetEnabledInput,
+  ScheduledTaskError,
+} from "./scheduledTasks.ts";
 
 export const WS_METHODS = {
   // Project registry methods
@@ -255,6 +263,12 @@ export const WS_METHODS = {
   serverGetUsageSummary: "server.getUsageSummary",
   serverGetCodexCapabilities: "server.getCodexCapabilities",
   serverSetCodexSkillEnabled: "server.setCodexSkillEnabled",
+  serverSetAzureSkillEnabled: "server.setAzureSkillEnabled",
+  serverSetAzureCapabilityEnabled: "server.setAzureCapabilityEnabled",
+  serverGetScheduledTasks: "server.getScheduledTasks",
+  serverUpsertScheduledTask: "server.upsertScheduledTask",
+  serverSetScheduledTaskEnabled: "server.setScheduledTaskEnabled",
+  serverRunScheduledTask: "server.runScheduledTask",
   serverSetCodexConfigEnabled: "server.setCodexConfigEnabled",
 
   // Cloud environment methods
@@ -355,6 +369,48 @@ export const WsServerSetCodexSkillEnabledRpc = Rpc.make(WS_METHODS.serverSetCode
   payload: CodexSkillEnabledInput,
   success: CodexCapabilities,
   error: Schema.Union([CodexCapabilitiesError, EnvironmentAuthorizationError]),
+});
+
+export const WsServerSetAzureSkillEnabledRpc = Rpc.make(WS_METHODS.serverSetAzureSkillEnabled, {
+  payload: AzureSkillEnabledInput,
+  success: CodexCapabilities,
+  error: Schema.Union([CodexCapabilitiesError, EnvironmentAuthorizationError]),
+});
+
+export const WsServerSetAzureCapabilityEnabledRpc = Rpc.make(
+  WS_METHODS.serverSetAzureCapabilityEnabled,
+  {
+    payload: AzureCapabilityEnabledInput,
+    success: CodexCapabilities,
+    error: Schema.Union([CodexCapabilitiesError, EnvironmentAuthorizationError]),
+  },
+);
+
+export const WsServerGetScheduledTasksRpc = Rpc.make(WS_METHODS.serverGetScheduledTasks, {
+  payload: Schema.Struct({}),
+  success: Schema.Array(ScheduledTask),
+  error: Schema.Union([ScheduledTaskError, EnvironmentAuthorizationError]),
+});
+
+export const WsServerUpsertScheduledTaskRpc = Rpc.make(WS_METHODS.serverUpsertScheduledTask, {
+  payload: ScheduledTask,
+  success: ScheduledTask,
+  error: Schema.Union([ScheduledTaskError, EnvironmentAuthorizationError]),
+});
+
+export const WsServerSetScheduledTaskEnabledRpc = Rpc.make(
+  WS_METHODS.serverSetScheduledTaskEnabled,
+  {
+    payload: ScheduledTaskSetEnabledInput,
+    success: ScheduledTask,
+    error: Schema.Union([ScheduledTaskError, EnvironmentAuthorizationError]),
+  },
+);
+
+export const WsServerRunScheduledTaskRpc = Rpc.make(WS_METHODS.serverRunScheduledTask, {
+  payload: ScheduledTaskRunInput,
+  success: ScheduledTask,
+  error: Schema.Union([ScheduledTaskError, EnvironmentAuthorizationError]),
 });
 
 export const WsServerSetCodexConfigEnabledRpc = Rpc.make(WS_METHODS.serverSetCodexConfigEnabled, {
@@ -850,6 +906,12 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetSettingsRpc,
   WsServerGetCodexCapabilitiesRpc,
   WsServerSetCodexSkillEnabledRpc,
+  WsServerSetAzureSkillEnabledRpc,
+  WsServerSetAzureCapabilityEnabledRpc,
+  WsServerGetScheduledTasksRpc,
+  WsServerUpsertScheduledTaskRpc,
+  WsServerSetScheduledTaskEnabledRpc,
+  WsServerRunScheduledTaskRpc,
   WsServerSetCodexConfigEnabledRpc,
   WsServerUpdateSettingsRpc,
   WsServerDiscoverSourceControlRpc,

@@ -10,6 +10,7 @@ import {
   getProviderOptionCurrentValue,
   getProviderOptionDescriptors,
   isClaudeUltrathinkPrompt,
+  resolveModelContextWindow,
 } from "@t3tools/shared/model";
 import type { ReactNode } from "react";
 
@@ -31,6 +32,7 @@ export type ComposerProviderState = {
   provider: ProviderDriverKind;
   promptEffort: string | null;
   modelOptionsForDispatch: ReadonlyArray<ProviderOptionSelection> | undefined;
+  contextWindowTokens?: number;
   composerFrameClassName?: string;
   composerSurfaceClassName?: string;
   modelPickerIconClassName?: string;
@@ -65,11 +67,17 @@ export function getComposerProviderState(input: ComposerProviderStateInput): Com
   const ultrathinkActive =
     (primarySelectDescriptor?.promptInjectedValues?.length ?? 0) > 0 &&
     promptInjectionState === "ultrathink";
+  const resolvedContextWindow = resolveModelContextWindow({
+    provider,
+    model,
+    ...(caps.contextWindowTokens !== undefined ? { discovered: caps.contextWindowTokens } : {}),
+  });
 
   return {
     provider,
     promptEffort,
     modelOptionsForDispatch: buildProviderOptionSelectionsFromDescriptors(descriptors),
+    ...(resolvedContextWindow !== undefined ? { contextWindowTokens: resolvedContextWindow } : {}),
     ...(ultrathinkActive
       ? {
           composerFrameClassName: "ultrathink-frame",

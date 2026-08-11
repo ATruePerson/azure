@@ -30,7 +30,7 @@ describe("sshEnvironment", () => {
     assert.equal(cause.message, "Failed to present SSH password prompt for devbox.");
     assert.equal(
       DesktopSshEnvironment.toSshPasswordPromptError(cause).message,
-      "Azure Code window is not available for SSH authentication.",
+      "Azure window is not available for SSH authentication.",
     );
   });
 

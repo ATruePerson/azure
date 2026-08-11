@@ -914,10 +914,43 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   // Context window
   // ------------------------------------------------------------------
-  const activeContextWindow = useMemo(
-    () => deriveLatestContextWindowSnapshot(activeThreadActivities ?? []),
-    [activeThreadActivities],
-  );
+  const activeContextWindow = useMemo(() => {
+    const current = deriveLatestContextWindowSnapshot(activeThreadActivities ?? []);
+    const knownMaxTokens = composerProviderState.contextWindowTokens;
+    if (current) {
+      if (current.maxTokens !== null || !knownMaxTokens) return current;
+      const usedPercentage = Math.min(100, (current.usedTokens / knownMaxTokens) * 100);
+      return {
+        ...current,
+        maxTokens: knownMaxTokens,
+        remainingTokens: Math.max(0, Math.round(knownMaxTokens - current.usedTokens)),
+        usedPercentage,
+        remainingPercentage: Math.max(0, 100 - usedPercentage),
+      };
+    }
+    if (!knownMaxTokens) return current;
+    return {
+      usedTokens: 0,
+      maxTokens: knownMaxTokens,
+      totalProcessedTokens: null,
+      remainingTokens: knownMaxTokens,
+      usedPercentage: 0,
+      remainingPercentage: 100,
+      inputTokens: null,
+      cachedInputTokens: null,
+      outputTokens: null,
+      reasoningOutputTokens: null,
+      lastUsedTokens: null,
+      lastInputTokens: null,
+      lastCachedInputTokens: null,
+      lastOutputTokens: null,
+      lastReasoningOutputTokens: null,
+      toolUses: null,
+      durationMs: null,
+      compactsAutomatically: false,
+      updatedAt: new Date(0).toISOString(),
+    };
+  }, [activeThreadActivities, composerProviderState.contextWindowTokens]);
   const activeThreadProviderDisplayName = useMemo(() => {
     if (!activeThreadModelSelection) return null;
     const entry = providerStatuses.find(

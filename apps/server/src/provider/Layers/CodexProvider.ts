@@ -52,6 +52,23 @@ class CodexCapabilityTargetError extends Data.TaggedError("CodexCapabilityTarget
   readonly detail: string;
 }> {}
 
+export type CodexCapabilityFailureCategory = "configuration" | "unavailable" | "requestFailed";
+
+export function codexCapabilityFailureCategory(cause: unknown): CodexCapabilityFailureCategory {
+  if (cause instanceof CodexCapabilityTargetError || Schema.is(ServerSettingsError)(cause)) {
+    return "configuration";
+  }
+  return Schema.is(CodexErrors.CodexAppServerSpawnError)(cause) ? "unavailable" : "requestFailed";
+}
+
+export function codexCapabilityFailureTag(cause: unknown): string {
+  return typeof cause === "object" && cause !== null && "_tag" in cause
+    ? String(cause._tag)
+    : cause instanceof Error
+      ? cause.name
+      : typeof cause;
+}
+
 const CODEX_APP_SERVER_PROBE_FORCE_KILL_AFTER = "2 seconds" as const;
 
 const CODEX_PRESENTATION = {
@@ -460,6 +477,14 @@ export const requestCodexCapabilities = Effect.fn("requestCodexCapabilities")(fu
         id: plugin.id,
         label: plugin.interface?.displayName ?? plugin.name,
         detail: marketplace.name,
+        description:
+          plugin.interface?.shortDescription ?? plugin.interface?.longDescription ?? undefined,
+        iconUrl:
+          plugin.interface?.logoUrlDark ??
+          plugin.interface?.logoUrl ??
+          plugin.interface?.composerIconUrl ??
+          undefined,
+        brandColor: plugin.interface?.brandColor ?? undefined,
         enabled: plugin.enabled,
         canToggle: plugin.installed && CODEX_CONFIG_KEY_SEGMENT.test(plugin.id),
       })),
@@ -658,7 +683,7 @@ const makePendingCodexProvider = (
           version: null,
           status: "warning",
           auth: { status: "unknown" },
-          message: "Codex is disabled in T3 Code settings.",
+          message: "Codex is disabled in Azure settings.",
         },
       });
     }
@@ -744,7 +769,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
         version: null,
         status: "warning",
         auth: { status: "unknown" },
-        message: "Codex is disabled in T3 Code settings.",
+        message: "Codex is disabled in Azure settings.",
       },
     });
   }
