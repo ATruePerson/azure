@@ -1,6 +1,16 @@
 import type { ContextMenuItem, PreviewSessionSnapshot } from "@t3tools/contracts";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
-import { Bot, FileDiff, Files, Globe2, ListChecks, Plus, TerminalSquare, X } from "lucide-react";
+import {
+  Bot,
+  FileDiff,
+  Files,
+  Globe2,
+  LayoutDashboard,
+  ListChecks,
+  Plus,
+  TerminalSquare,
+  X,
+} from "lucide-react";
 import {
   type MouseEvent as ReactMouseEvent,
   type ReactElement,
@@ -46,6 +56,7 @@ interface RightPanelTabsProps {
   onAddFiles: () => void;
   onAddAgents: () => void;
   onAddProgress: () => void;
+  onAddOverview: () => void;
   browserAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
@@ -95,6 +106,7 @@ function RightPanelEmptyState(props: {
   onAddFiles: () => void;
   onAddAgents: () => void;
   onAddProgress: () => void;
+  onAddOverview: () => void;
   browserAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
@@ -147,6 +159,14 @@ function RightPanelEmptyState(props: {
       available: true,
       disabledReason: null,
       onClick: props.onAddProgress,
+    },
+    {
+      label: "Overview",
+      description: "See plan, outputs, processes, and sources.",
+      icon: LayoutDashboard,
+      available: true,
+      disabledReason: null,
+      onClick: props.onAddOverview,
     },
   ] as const;
 
@@ -227,6 +247,8 @@ function surfaceTitle(
       return "Agents";
     case "progress":
       return "Progress";
+    case "overview":
+      return "Overview";
     case "preview": {
       const snapshot = surface.resourceId ? sessions[surface.resourceId] : null;
       if (!snapshot || snapshot.navStatus._tag === "Idle") return "Browser";
@@ -290,6 +312,8 @@ function SurfaceIcon({
       return <Bot className="size-3 shrink-0" />;
     case "progress":
       return <ListChecks className="size-3 shrink-0" />;
+    case "overview":
+      return <LayoutDashboard className="size-3 shrink-0" />;
   }
 }
 
@@ -498,6 +522,10 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                     <ListChecks />
                     Progress
                   </SurfaceMenuItem>
+                  <SurfaceMenuItem available onClick={props.onAddOverview}>
+                    <LayoutDashboard />
+                    Overview
+                  </SurfaceMenuItem>
                 </MenuPopup>
               </Menu>
             ) : null}
@@ -514,6 +542,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddFiles={props.onAddFiles}
             onAddAgents={props.onAddAgents}
             onAddProgress={props.onAddProgress}
+            onAddOverview={props.onAddOverview}
             browserAvailable={props.browserAvailable}
             diffAvailable={props.diffAvailable}
             filesAvailable={props.filesAvailable}

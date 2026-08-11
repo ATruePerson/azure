@@ -129,6 +129,36 @@ describe("rightPanelStore", () => {
     ).toEqual([{ id: "progress", kind: "progress" }]);
   });
 
+  it("keeps Overview as a singleton and opens it for an empty panel", () => {
+    expect(
+      migratePersistedRightPanelState({
+        byThreadKey: {
+          "env-1:thread-A": {
+            isOpen: true,
+            activeSurfaceId: "overview",
+            surfaces: [{ id: "overview", kind: "overview" }],
+          },
+        },
+      }),
+    ).toEqual({
+      byThreadKey: {
+        "env-1:thread-A": {
+          isOpen: true,
+          activeSurfaceId: "overview",
+          surfaces: [{ id: "overview", kind: "overview" }],
+        },
+      },
+    });
+    useRightPanelStore.getState().show(refA);
+    useRightPanelStore.getState().open(refA, "overview");
+    useRightPanelStore.getState().open(refA, "overview");
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "overview",
+      surfaces: [{ id: "overview", kind: "overview" }],
+    });
+  });
+
   it("drops persisted plan surfaces and does not reopen an empty panel", () => {
     expect(
       migratePersistedRightPanelState({
@@ -300,16 +330,20 @@ describe("rightPanelStore", () => {
     });
   });
 
-  it("toggles empty panel visibility without creating a surface", () => {
+  it("opens Overview when toggling an empty panel", () => {
     useRightPanelStore.getState().toggleVisibility(refA);
     expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
       isOpen: true,
-      activeSurfaceId: null,
-      surfaces: [],
+      activeSurfaceId: "overview",
+      surfaces: [{ id: "overview", kind: "overview" }],
     });
 
     useRightPanelStore.getState().toggleVisibility(refA);
-    expect(useRightPanelStore.getState().byThreadKey).toEqual({});
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: false,
+      activeSurfaceId: "overview",
+      surfaces: [{ id: "overview", kind: "overview" }],
+    });
   });
 
   it("toggle hides the panel without discarding the active surface", () => {

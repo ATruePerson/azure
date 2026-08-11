@@ -144,6 +144,7 @@ import {
   usePreviewMiniPlayerStore,
 } from "../previewMiniPlayerStore";
 import { RightPanelTabs } from "./RightPanelTabs";
+import { ThreadOverviewPanel } from "./ThreadOverviewPanel";
 import { AgentsPanel } from "./AgentsPanel";
 import { ProgressPanel } from "./ProgressPanel";
 import {
@@ -1234,6 +1235,9 @@ function ChatViewContent(props: ChatViewProps) {
       : draftId
         ? store.getDraftSession(draftId)
         : null,
+  );
+  const composerOverviewDraft = useComposerDraftStore((store) =>
+    store.getComposerDraft(composerDraftTarget),
   );
   const routeServerThreadShell = useThreadShell(routeKind === "server" ? routeThreadRef : null);
   const serverThread = useThread(routeThreadRef, { waitForShell: draftThread !== null });
@@ -3243,6 +3247,10 @@ function ChatViewContent(props: ChatViewProps) {
     if (!activeThreadRef) return;
     useRightPanelStore.getState().open(activeThreadRef, "progress");
   }, [activeThreadRef]);
+  const addOverviewSurface = useCallback(() => {
+    if (!activeThreadRef) return;
+    useRightPanelStore.getState().open(activeThreadRef, "overview");
+  }, [activeThreadRef]);
   const openFileSurface = useCallback(
     (relativePath: string) => {
       if (!activeThreadRef || !activeProject) return;
@@ -3536,9 +3544,15 @@ function ChatViewContent(props: ChatViewProps) {
       }
 
       let result: AtomCommandResult<void, unknown> = AsyncResult.success(undefined);
+      const modelChangeDeferredToServer =
+        input.modelSelection !== undefined &&
+        serverThread.session !== null &&
+        input.modelSelection.model !== serverThread.modelSelection.model;
       const metadataUpdate = resolveThreadMetadataUpdateForNextTurn({
         currentModelSelection: serverThread.modelSelection,
-        ...(input.modelSelection ? { nextModelSelection: input.modelSelection } : {}),
+        ...(input.modelSelection && !modelChangeDeferredToServer
+          ? { nextModelSelection: input.modelSelection }
+          : {}),
         currentBranch: serverThread.branch,
         ...(input.branch ? { nextBranch: input.branch } : {}),
       });
@@ -5960,7 +5974,41 @@ function ChatViewContent(props: ChatViewProps) {
     </div>
   );
   const rightPanelContent = activeThreadRef ? (
-    activeRightPanelSurface?.kind === "preview" ? (
+    activeRightPanelSurface?.kind === "overview" ? (
+      <ThreadOverviewPanel
+        plan={activePlan}
+        workLogEntries={workLogEntries}
+        runningTerminalIds={runningTerminalIds}
+        terminalLabelsById={activeTerminalLabelsById}
+        previewSessions={activePreviewState.sessions}
+        messages={timelineMessages}
+        pendingImages={composerOverviewDraft?.images ?? []}
+        pendingTerminalContexts={composerOverviewDraft?.terminalContexts ?? []}
+        pendingElementContexts={composerOverviewDraft?.elementContexts ?? []}
+        pendingPreviewAnnotations={composerOverviewDraft?.previewAnnotations ?? []}
+        pendingReviewComments={composerOverviewDraft?.reviewComments ?? []}
+        onOpenProgress={addProgressSurface}
+        onOpenFile={openFileSurface}
+        onOpenTerminal={(terminalId) => {
+          useRightPanelStore.getState().openTerminal(activeThreadRef, terminalId);
+        }}
+        onOpenPreview={(tabId) => {
+          const previewTabId = tabId ?? activePreviewState.activeTabId;
+          if (previewTabId) {
+            useRightPanelStore.getState().openBrowser(activeThreadRef, previewTabId);
+          } else {
+            createBrowserSurface();
+          }
+        }}
+        onOpenImage={(image) => {
+          if (!image.previewUrl) return;
+          onExpandTimelineImage({
+            images: [{ src: image.previewUrl, name: image.name }],
+            index: 0,
+          });
+        }}
+      />
+    ) : activeRightPanelSurface?.kind === "preview" ? (
       <Suspense fallback={null}>
         <PreviewPanel
           mode="embedded"
@@ -6443,6 +6491,7 @@ function ChatViewContent(props: ChatViewProps) {
           onAddFiles={addFilesSurface}
           onAddAgents={addAgentsSurface}
           onAddProgress={addProgressSurface}
+          onAddOverview={addOverviewSurface}
           browserAvailable={isPreviewSupportedInRuntime()}
           diffAvailable={isServerThread && isGitRepo}
           filesAvailable={activeProject !== null}
@@ -6472,6 +6521,7 @@ function ChatViewContent(props: ChatViewProps) {
             onAddFiles={addFilesSurface}
             onAddAgents={addAgentsSurface}
             onAddProgress={addProgressSurface}
+            onAddOverview={addOverviewSurface}
             browserAvailable={isPreviewSupportedInRuntime()}
             diffAvailable={isServerThread && isGitRepo}
             filesAvailable={activeProject !== null}

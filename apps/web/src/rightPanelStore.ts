@@ -22,6 +22,7 @@ export const RIGHT_PANEL_KINDS = [
   "terminal",
   "agents",
   "progress",
+  "overview",
 ] as const;
 export type RightPanelKind = (typeof RIGHT_PANEL_KINDS)[number];
 
@@ -46,12 +47,12 @@ export type RightPanelSurface =
       revealRequestId: number;
     }
   | { id: "agents"; kind: "agents" }
-  | { id: "progress"; kind: "progress" };
+  | { id: "progress"; kind: "progress" }
+  | { id: "overview"; kind: "overview" };
 
 const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
-// v10 restores a compact plan view as the Progress surface. Plans also remain
-// inline in the transcript.
-const RIGHT_PANEL_STORAGE_VERSION = 10;
+// v11 adds the singleton Overview surface while preserving every existing tab.
+const RIGHT_PANEL_STORAGE_VERSION = 11;
 
 export interface ThreadRightPanelState {
   isOpen: boolean;
@@ -105,6 +106,8 @@ const singletonSurface = (
       return { id: "agents", kind };
     case "progress":
       return { id: "progress", kind };
+    case "overview":
+      return { id: "overview", kind };
   }
 };
 
@@ -505,7 +508,11 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
       show: (ref) =>
         set((state) => ({
           byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) =>
-            current.isOpen ? current : { ...current, isOpen: true },
+            current.isOpen
+              ? current
+              : current.surfaces.length > 0
+                ? { ...current, isOpen: true }
+                : upsertSurface(current, singletonSurface("overview")),
           ),
         })),
       close: (ref) =>
@@ -519,6 +526,12 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
           byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => ({
             ...current,
             isOpen: !current.isOpen,
+            ...(current.isOpen || current.surfaces.length > 0
+              ? {}
+              : {
+                  surfaces: [singletonSurface("overview")],
+                  activeSurfaceId: "overview",
+                }),
           })),
         })),
       toggle: (ref, kind) =>
