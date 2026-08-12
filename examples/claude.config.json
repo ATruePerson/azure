@@ -1,0 +1,6 @@
+{
+  "alias_routes": {
+    "sonnet": { "provider": "opencode", "model": "deepseek-v4-flash-free", "toolcalling": true, "stream": true },
+    "haiku": { "provider": "nvidia", "model": "stepfun-ai/step-3.7-flash", "toolcalling": true, "stream": true }
+  }
+}

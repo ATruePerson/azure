@@ -1,5 +1,5 @@
 #!/bin/sh
-# azure installer — downloads the latest prebuilt binary for your OS/arch.
+# Azure installer — downloads the latest Bun-compiled binary for your OS/arch.
 #
 #   curl -fsSL https://raw.githubusercontent.com/ATruePerson/azure/main/scripts/install.sh | sh
 #
@@ -18,7 +18,7 @@ case "$arch" in
 esac
 case "$os" in
   darwin | linux) ;;
-  *) echo "Unsupported OS: $os (use 'go install' instead)" >&2; exit 1 ;;
+  *) echo "Unsupported OS: $os" >&2; exit 1 ;;
 esac
 
 asset="azure-${os}-${arch}.tar.gz"
@@ -29,7 +29,7 @@ trap 'rm -rf "$tmp"' EXIT
 
 echo "Downloading $asset ..."
 if ! curl -fsSL "$url" -o "$tmp/$asset"; then
-  echo "Download failed. No prebuilt binary yet? Try: go install github.com/${REPO}@latest" >&2
+  echo "Download failed. Build from source with: bun run build" >&2
   exit 1
 fi
 

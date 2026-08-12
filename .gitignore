@@ -1,6 +1,8 @@
-# Binaries
+# Bun build output and binaries
+dist/
 azure
-/azure-proxy
+azure-*
+!assets/azure-search.svg
 *.exe
 
 # Local checkpoints and generated benchmark output
@@ -14,17 +16,11 @@ benchmarks/model-routing/results.json
 auth.json
 *.auth.json
 
-# Go
-go.work
-go.work.sum
-
-# Python generated files
-__pycache__/
-*.py[cod]
-*$py.class
-
 # Node dependencies
 node_modules/
+
+# Bun
+.bun/
 
 # Editor
 *.swp

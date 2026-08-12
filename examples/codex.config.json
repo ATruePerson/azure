@@ -1,0 +1,16 @@
+{
+  "models": {
+    "codex-step-3.7-flash": {
+      "display_name": "Step 3.7 Flash (NVIDIA)",
+      "provider": "nvidia",
+      "model": "stepfun-ai/step-3.7-flash",
+      "tool_call_support": true,
+      "streaming_support": true,
+      "image_input_support": true,
+      "file_input_support": false,
+      "max_context": 262144,
+      "max_output": 16384,
+      "enabled": true
+    }
+  }
+}

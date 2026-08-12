@@ -1,104 +1,37 @@
 name: Release
 
-# Publish a complete, updater-compatible release for every change merged to main.
-# Version tags pushed manually continue to produce releases as well.
 on:
   push:
-    branches:
-      - main
-    tags:
-      - "v*"
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
   contents: write
 
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   build:
-    runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
-          - goos: darwin
-            goarch: arm64
-          - goos: darwin
-            goarch: amd64
-          - goos: linux
-            goarch: arm64
-          - goos: linux
-            goarch: amd64
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - name: Test
-        run: go test ./...
-
-      - name: Build
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: "0"
-        run: |
-          out="azure-${GOOS}-${GOARCH}"
-          go build -trimpath -ldflags "-s -w" -o "$out" .
-          tar -czf "${out}.tar.gz" "$out"
-          sha256sum "${out}.tar.gz" > "${out}.tar.gz.sha256"
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: azure-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: |
-            azure-*.tar.gz
-            azure-*.tar.gz.sha256
-          retention-days: 1
-
-  release:
-    needs: build
+          - os: darwin
+            arch: arm64
+          - os: darwin
+            arch: x64
+          - os: linux
+            arch: arm64
+          - os: linux
+            arch: x64
     runs-on: ubuntu-latest
     steps:
-      - name: Resolve release tag
-        id: version
-        shell: bash
-        run: |
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            tag="${GITHUB_REF_NAME}"
-          else
-            tag="v0.2.${GITHUB_RUN_NUMBER}"
-          fi
-          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
-          echo "Publishing ${tag} from ${GITHUB_SHA}"
-
-      - name: Download all build artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          path: dist
-          merge-multiple: true
-
-      - name: Verify complete release assets
-        shell: bash
-        run: |
-          set -euo pipefail
-          for platform in darwin-arm64 darwin-amd64 linux-arm64 linux-amd64; do
-            test -s "dist/azure-${platform}.tar.gz"
-            test -s "dist/azure-${platform}.tar.gz.sha256"
-            (cd dist && sha256sum -c "azure-${platform}.tar.gz.sha256")
-          done
-
-      - name: Publish release
-        uses: softprops/action-gh-release@v2
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun test
+      - run: bun build --compile --target=bun-${{ matrix.os }}-${{ matrix.arch }} src/cli.ts --outfile azure-${{ matrix.os }}-${{ matrix.arch }}
+      - run: tar -czf azure-${{ matrix.os }}-${{ matrix.arch }}.tar.gz azure-${{ matrix.os }}-${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          target_commitish: ${{ github.sha }}
-          files: dist/*
-          generate_release_notes: true
-          make_latest: true
+          name: azure-${{ matrix.os }}-${{ matrix.arch }}
+          path: azure-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
