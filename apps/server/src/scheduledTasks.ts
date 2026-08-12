@@ -1,8 +1,9 @@
+// @effect-diagnostics globalDate:off
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
-import { RRule } from "rrule";
+import rrule from "rrule";
 import * as Schema from "effect/Schema";
 import {
   ScheduledTask,
@@ -13,6 +14,7 @@ import {
 const MAX_TASKS_BYTES = 512 * 1024;
 const TASKS_FILE = "scheduled-tasks.json";
 const activeTaskIds = new Set<string>();
+const { RRule } = rrule;
 
 export function scheduledTasksPath(azureHome = NodePath.join(NodeOS.homedir(), ".azure")): string {
   return NodePath.join(azureHome, TASKS_FILE);

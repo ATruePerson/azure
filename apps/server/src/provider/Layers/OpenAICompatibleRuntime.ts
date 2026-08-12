@@ -630,6 +630,7 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
             content:
               "Summarize the completed conversation context for a later assistant. Preserve decisions, constraints, unresolved work, and tool results. Be concise.",
           },
+          // @effect-diagnostics-next-line preferSchemaOverJson:off -- Provider messages are already validated runtime values.
           { role: "user", content: JSON.stringify(removed) },
         ],
         ...requestOptions(options.provider, model ?? "", state.modelOptions),

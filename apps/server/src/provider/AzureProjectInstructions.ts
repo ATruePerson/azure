@@ -1,3 +1,4 @@
+// @effect-diagnostics globalDate:off
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";

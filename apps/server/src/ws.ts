@@ -1,4 +1,5 @@
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -1695,7 +1696,11 @@ const makeWsRpcLayer = (
                               prepareWorktree: {
                                 projectCwd: task.projectPath,
                                 baseBranch: "HEAD",
-                                branch: `azure/scheduled/${task.id}-${Date.now()}`.slice(0, 120),
+                                branch:
+                                  `azure/scheduled/${task.id}-${yield* Clock.currentTimeMillis}`.slice(
+                                    0,
+                                    120,
+                                  ),
                                 startFromOrigin: false,
                               },
                             }
@@ -1704,19 +1709,17 @@ const makeWsRpcLayer = (
                     }
                   : {}),
               } satisfies OrchestrationCommand;
-              yield* orchestrationEngine
-                .dispatch(command)
-                .pipe(
-                  Effect.mapError(
-                    (cause) =>
-                      new ScheduledTaskError({
-                        message:
-                          cause instanceof Error
-                            ? cause.message
-                            : "Could not start scheduled task thread.",
-                      }),
-                  ),
-                );
+              yield* orchestrationEngine.dispatch(command).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new ScheduledTaskError({
+                      message:
+                        cause instanceof Error
+                          ? cause.message
+                          : "Could not start scheduled task thread.",
+                    }),
+                ),
+              );
               yield* Effect.tryPromise({
                 try: () =>
                   upsertScheduledTask({
@@ -1738,7 +1741,7 @@ const makeWsRpcLayer = (
               };
             }).pipe(
               Effect.mapError((cause) =>
-                cause instanceof ScheduledTaskError
+                Schema.is(ScheduledTaskError)(cause)
                   ? cause
                   : new ScheduledTaskError({
                       message:

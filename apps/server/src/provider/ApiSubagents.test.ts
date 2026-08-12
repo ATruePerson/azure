@@ -1,3 +1,4 @@
+// @effect-diagnostics globalTimers:off
 import { describe, expect, it } from "vite-plus/test";
 import { ApiSubagentController, parseApiSubagentToolArguments } from "./ApiSubagents.ts";
 
