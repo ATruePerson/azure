@@ -1,5 +1,5 @@
-import { EnvironmentId } from "@t3tools/contracts";
-import type { RelayEnvironmentStatusResponse } from "@t3tools/contracts/relay";
+import { EnvironmentId } from "@azure/contracts";
+import type { RelayEnvironmentStatusResponse } from "@azure/contracts/relay";
 import { describe, expect, it } from "vite-plus/test";
 
 import { availableCloudEnvironmentPresentation } from "./cloudEnvironmentPresentation";

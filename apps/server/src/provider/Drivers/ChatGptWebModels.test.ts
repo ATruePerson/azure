@@ -1,9 +1,5 @@
 import { assert, it } from "@effect/vitest";
-import {
-  ProviderDriverKind,
-  ProviderInstanceId,
-  type ServerProviderModel,
-} from "@t3tools/contracts";
+import { ProviderDriverKind, ProviderInstanceId, type ServerProviderModel } from "@azure/contracts";
 import type { ServerProviderDraft } from "../providerSnapshot.ts";
 
 import { chatGptWebModels, markFirstModelDefault, nativeCodexModels } from "./ChatGptWebModels.ts";

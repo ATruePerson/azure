@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/oxlint-plugin-t3code",
+  "name": "@azure/oxlint-plugin-azure",
   "private": true,
   "type": "module",
   "scripts": {

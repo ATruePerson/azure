@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@azure/contracts";
 
 export interface ComposerPathSearchEntry {
   readonly path: string;

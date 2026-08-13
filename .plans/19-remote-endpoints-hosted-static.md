@@ -7,7 +7,7 @@ Make remote access feel first-class while keeping the free DIY path open.
 The immediate product goal is:
 
 - users can expose a backend through LAN, their own Tailscale, MagicDNS, a manual HTTPS endpoint, or later T3 Tunnel
-- users can generate a hosted pairing link for `app.t3.codes`
+- users can generate a hosted pairing link for `app.azure.codes`
 - the hosted app can pair, persist, reconnect, and operate against saved environments without requiring a backend at the hosted app origin
 - all transports reuse the same backend auth, WebSocket runtime, saved environment registry, and pairing UX
 
@@ -113,7 +113,7 @@ What is ready:
 
 What is not solved by code alone:
 
-- `https://app.t3.codes` cannot reliably call `http://...` or `ws://...` endpoints because browsers block mixed content.
+- `https://app.azure.codes` cannot reliably call `http://...` or `ws://...` endpoints because browsers block mixed content.
 - `wss://100.x.y.z:3773` needs a certificate the browser trusts. A raw Tailscale IP does not solve certificate trust.
 - LAN `http://192.168.x.y:3773` is usable from another desktop/native context but not from the hosted HTTPS app.
 - The UI needs to explain why an endpoint is copyable for desktop pairing but not hosted-app compatible.
@@ -122,7 +122,7 @@ Policy:
 
 - Support both HTTP/WS and HTTPS/WSS at the runtime layer.
 - Mark endpoint compatibility at the product layer.
-- Generate `app.t3.codes` links only from endpoints that are likely hosted-browser compatible, or show a warning with an explicit fallback.
+- Generate `app.azure.codes` links only from endpoints that are likely hosted-browser compatible, or show a warning with an explicit fallback.
 
 ## Architecture
 
@@ -176,7 +176,7 @@ buildHostedPairingUrl({
 Generated URL:
 
 ```text
-https://app.t3.codes/pair?host=<encoded endpoint httpBaseUrl>#token=<one-time token>
+https://app.azure.codes/pair?host=<encoded endpoint httpBaseUrl>#token=<one-time token>
 ```
 
 Use fragment tokens by default. Continue accepting `?token=` for compatibility.
@@ -218,7 +218,7 @@ Use fragment tokens by default. Continue accepting `?token=` for compatibility.
 - Existing LAN/network access UI still works.
 - Pairing links are generated from endpoint records.
 - Loopback endpoints never produce hosted pairing links silently.
-- HTTP private-network endpoints are marked incompatible with `app.t3.codes`.
+- HTTP private-network endpoints are marked incompatible with `app.azure.codes`.
 - No remote environment runtime changes are required for existing saved environments.
 
 ## Phase 2: BYO Tailscale/MagicDNS
@@ -262,7 +262,7 @@ Use fragment tokens by default. Continue accepting `?token=` for compatibility.
 
 ### Goals
 
-- `app.t3.codes` works as a real client shell.
+- `app.azure.codes` works as a real client shell.
 - It can pair, persist, reconnect, and clearly explain offline/incompatible states.
 
 ### Tasks
@@ -306,8 +306,8 @@ Use fragment tokens by default. Continue accepting `?token=` for compatibility.
 
 ### Acceptance Criteria
 
-- `app.t3.codes` can pair a reachable HTTPS backend and reconnect after reload.
-- A saved environment can be used without any backend at `app.t3.codes`.
+- `app.azure.codes` can pair a reachable HTTPS backend and reconnect after reload.
+- A saved environment can be used without any backend at `app.azure.codes`.
 - Offline machines show a useful state instead of a generic boot error.
 - HTTP endpoints are still supported in desktop/native/local contexts.
 - Hosted HTTPS app only promises compatibility for HTTPS/WSS endpoints.
@@ -324,7 +324,7 @@ Future tunnel provider responsibilities:
 - use existing backend pairing/session auth
 - never bypass server auth
 
-The tunnel fabric can later be Pipenet-derived, Tailscale-derived, or another reverse tunnel implementation. The rest of T3 Code should only see an `AdvertisedEndpoint`.
+The tunnel fabric can later be Pipenet-derived, Tailscale-derived, or another reverse tunnel implementation. The rest of Azure Code should only see an `AdvertisedEndpoint`.
 
 ## Security Checklist
 

@@ -23,7 +23,7 @@ import {
   ThreadId,
   TurnId,
   type ProviderRuntimeEvent,
-} from "@t3tools/contracts";
+} from "@azure/contracts";
 
 import { ServerConfig } from "../../config.ts";
 import { grokPromptSettlementBelongsToContext, makeGrokAdapter } from "./GrokAdapter.ts";
@@ -83,7 +83,7 @@ async function readJsonLines(filePath: string) {
 }
 
 const grokAdapterTestLayer = ServerConfig.layerTest(process.cwd(), {
-  prefix: "t3code-grok-adapter-test-",
+  prefix: "azure-grok-adapter-test-",
 }).pipe(Layer.provideMerge(NodeServices.layer));
 
 const makeTestAdapter = (binaryPath: string, options?: Parameters<typeof makeGrokAdapter>[1]) =>

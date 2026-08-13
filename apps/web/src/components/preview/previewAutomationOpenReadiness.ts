@@ -3,7 +3,7 @@ import {
   type PreviewAutomationOpenInput,
   type PreviewSessionSnapshot,
   type PreviewViewportSetting,
-} from "@t3tools/contracts";
+} from "@azure/contracts";
 
 export const DEFAULT_PREVIEW_AUTOMATION_VIEWPORT = {
   _tag: "freeform",

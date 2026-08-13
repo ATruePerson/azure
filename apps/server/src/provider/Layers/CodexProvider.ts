@@ -25,16 +25,16 @@ import type {
   ProviderOptionDescriptor,
   ServerProviderModel,
   ServerProviderSkill,
-} from "@t3tools/contracts";
+} from "@azure/contracts";
 import {
   CodexSettings,
   PREFERRED_DEFAULT_CODEX_MODELS,
   ProviderDriverKind,
   ServerSettingsError,
-} from "@t3tools/contracts";
+} from "@azure/contracts";
 
-import { createModelCapabilities } from "@t3tools/shared/model";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { createModelCapabilities } from "@azure/shared/model";
+import { resolveSpawnCommand } from "@azure/shared/shell";
 import { codexAppServerArgs, resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
 import {
   AUTH_PROBE_TIMEOUT_MS,
@@ -591,8 +591,8 @@ export const setCodexConfigEnabled = Effect.fn("setCodexConfigEnabled")(function
 export function buildCodexInitializeParams(): CodexSchema.V1InitializeParams {
   return {
     clientInfo: {
-      name: "t3code_desktop",
-      title: "T3 Code Desktop",
+      name: "azure_desktop",
+      title: "Azure Code Desktop",
       version: packageJson.version,
     },
     capabilities: {

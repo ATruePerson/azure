@@ -11,7 +11,7 @@ import {
   claimScheduledTask,
   writeScheduledTasks,
 } from "./scheduledTasks.ts";
-import type { ScheduledTask } from "@t3tools/contracts";
+import type { ScheduledTask } from "@azure/contracts";
 
 const directories: string[] = [];
 afterEach(async () => {

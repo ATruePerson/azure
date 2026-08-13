@@ -1,4 +1,4 @@
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId } from "@azure/contracts";
 import { useEffect } from "react";
 
 export type HardwareKeyboardCommand =

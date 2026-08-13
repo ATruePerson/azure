@@ -1,4 +1,4 @@
-import type { ApprovalRequestId } from "@t3tools/contracts";
+import type { ApprovalRequestId } from "@azure/contracts";
 import { Pressable, View } from "react-native";
 
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";

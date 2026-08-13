@@ -5,7 +5,7 @@ import {
   ProviderInstanceId,
   type CodexCapabilities,
   type CodexCapabilityItem,
-} from "@t3tools/contracts";
+} from "@azure/contracts";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { usePrimaryEnvironment } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";

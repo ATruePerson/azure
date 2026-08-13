@@ -1,6 +1,6 @@
 import * as React from "react";
-import type { ContextMenuItem } from "@t3tools/contracts";
-import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
+import type { ContextMenuItem } from "@azure/contracts";
+import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@azure/contracts/settings";
 import {
   getThreadSortTimestamp,
   sortThreads,
@@ -522,8 +522,8 @@ export {
   generateSpreadPinOrderKeys,
   pinOrderKeyBetween,
   planPinnedReorder,
-} from "@t3tools/client-runtime/state/thread-sort";
-export { sortPinnedThreadsByOrderKey as sortPinnedThreadsForSidebar } from "@t3tools/client-runtime/state/thread-sort";
+} from "@azure/client-runtime/state/thread-sort";
+export { sortPinnedThreadsByOrderKey as sortPinnedThreadsForSidebar } from "@azure/client-runtime/state/thread-sort";
 
 /**
  * Search the already-ordered sidebar thread collection by title only.

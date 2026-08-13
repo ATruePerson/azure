@@ -36,14 +36,14 @@ it("detects package runners from their cache entry paths", () => {
 
 it("treats stable installs as direct invocations", () => {
   assert.isNull(detectCliRunner("/usr/local/lib/node_modules/t3/dist/bin.mjs"));
-  assert.isNull(detectCliRunner("/home/theo/Code/work/t3code/apps/server/dist/bin.mjs"));
-  assert.isNull(detectCliRunner("/home/theo/.t3/runtime/0.0.31/node_modules/t3/dist/bin.mjs"));
+  assert.isNull(detectCliRunner("/home/theo/Code/work/azure/apps/server/dist/bin.mjs"));
+  assert.isNull(detectCliRunner("/home/theo/.azure/runtime/0.0.31/node_modules/t3/dist/bin.mjs"));
   assert.isNull(detectCliRunner(""));
 });
 
 it("re-suggests the nightly channel only for nightly builds", () => {
   assert.equal(suggestedPackageSpec("0.0.31-nightly.20260729"), "t3@nightly");
-  assert.equal(suggestedPackageSpec("0.0.31"), "t3");
+  assert.equal(suggestedPackageSpec("0.0.31"), "azure");
 });
 
 it("formats serve suggestions to match the launching command", () => {
@@ -53,7 +53,7 @@ it("formats serve suggestions to match the launching command", () => {
       entryPath: "/home/theo/.npm/_npx/abc/node_modules/t3/dist/bin.mjs",
       version: "0.0.31-nightly.20260729",
     }),
-    "npx t3@nightly serve",
+    "npx azure@nightly serve",
   );
   assert.equal(
     formatCliCommand({

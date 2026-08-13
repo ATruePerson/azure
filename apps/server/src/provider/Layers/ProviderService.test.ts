@@ -11,7 +11,7 @@ import type {
   ProviderSendTurnInput,
   ProviderSession,
   ProviderTurnStartResult,
-} from "@t3tools/contracts";
+} from "@azure/contracts";
 import {
   ApprovalRequestId,
   EnvironmentId,
@@ -21,8 +21,8 @@ import {
   ProviderSessionStartInput,
   ThreadId,
   TurnId,
-} from "@t3tools/contracts";
-import { createModelSelection } from "@t3tools/shared/model";
+} from "@azure/contracts";
+import { createModelSelection } from "@azure/shared/model";
 import { it, assert, vi } from "@effect/vitest";
 
 import * as Deferred from "effect/Deferred";

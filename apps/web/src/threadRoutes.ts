@@ -1,5 +1,5 @@
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import { scopeThreadRef } from "@azure/client-runtime/environment";
+import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@azure/contracts";
 import type { DraftId } from "./composerDraftStore";
 
 export type ThreadRouteTarget =

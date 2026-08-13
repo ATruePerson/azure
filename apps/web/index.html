@@ -13,10 +13,10 @@
       (() => {
         const LIGHT_BACKGROUND = "#ffffff";
         const DARK_BACKGROUND = "#0a0a0a";
-        const CUSTOM_THEMES_STORAGE_KEY = "t3code:themes:v1";
-        const THEME_FOLLOW_SYSTEM_STORAGE_KEY = "t3code:theme-follow-system";
-        const THEME_APPEARANCE_MODE_STORAGE_KEY = "t3code:theme-appearance-mode";
-        const THEME_HALVES_STORAGE_KEY = "t3code:theme-halves:v1";
+        const CUSTOM_THEMES_STORAGE_KEY = "azure:themes:v1";
+        const THEME_FOLLOW_SYSTEM_STORAGE_KEY = "azure:theme-follow-system";
+        const THEME_APPEARANCE_MODE_STORAGE_KEY = "azure:theme-appearance-mode";
+        const THEME_HALVES_STORAGE_KEY = "azure:theme-halves:v1";
         const SPLASH_COLORS = {
           light: {
             background: "#ffffff",
@@ -199,7 +199,7 @@
         };
 
         try {
-          const storedTheme = window.localStorage.getItem("t3code:theme");
+          const storedTheme = window.localStorage.getItem("azure:theme");
           const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
           // Older builds stored the dark Azure Chat palette as its own theme id
           // and every maintainer theme under a t3- prefix; keep those

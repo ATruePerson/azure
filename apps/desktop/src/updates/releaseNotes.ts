@@ -1,4 +1,4 @@
-import type { DesktopUpdateReleaseNote } from "@t3tools/contracts";
+import type { DesktopUpdateReleaseNote } from "@azure/contracts";
 
 interface ElectronReleaseNoteInfo {
   readonly version: string;

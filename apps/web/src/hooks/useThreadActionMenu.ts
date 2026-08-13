@@ -1,17 +1,17 @@
-import { scopeProjectRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { scopeProjectRef, scopedThreadKey } from "@azure/client-runtime/environment";
 import {
   type AtomCommandResult,
   isAtomCommandInterrupted,
   settlePromise,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@azure/client-runtime/state/runtime";
 import {
   canSnooze,
   effectiveSettled,
   effectiveSnoozed,
   type ChangeRequestStateLike,
-} from "@t3tools/client-runtime/state/thread-settled";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+} from "@azure/client-runtime/state/thread-settled";
+import type { ScopedThreadRef } from "@azure/contracts";
 import { useCallback } from "react";
 
 import { resolveSnoozePresets, snoozeWakeDescription } from "../components/Sidebar.snooze";

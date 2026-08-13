@@ -1,9 +1,9 @@
-import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
+import type { EnvironmentConnectionPhase } from "@azure/client-runtime/connection";
 import {
   AuthOrchestrationOperateScope,
   type AuthSessionState,
   type EnvironmentId,
-} from "@t3tools/contracts";
+} from "@azure/contracts";
 
 export interface ProviderEnvironmentOptionLike {
   readonly environmentId: EnvironmentId;

@@ -45,7 +45,7 @@ import {
   WINDOWS_ASAR_UNPACK,
 } from "./build-desktop-artifact.ts";
 import { BRAND_ASSET_PATHS } from "./lib/brand-assets.ts";
-import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessArchitecture, HostProcessPlatform } from "@azure/shared/hostProcess";
 
 function mockProcess(exitCode: number) {
   return ChildProcessSpawner.makeHandle({
@@ -121,7 +121,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           ConfigProvider.layer(
             ConfigProvider.fromEnv({
               env: {
-                GITHUB_REPOSITORY: "pingdotgg/t3code",
+                GITHUB_REPOSITORY: "pingdotgg/azure",
               },
             }),
           ),
@@ -132,7 +132,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           ConfigProvider.layer(
             ConfigProvider.fromEnv({
               env: {
-                T3CODE_DESKTOP_UPDATE_REPOSITORY: "ATruePerson/azure-code",
+                AZURE_DESKTOP_UPDATE_REPOSITORY: "ATruePerson/azure-code",
               },
             }),
           ),
@@ -143,7 +143,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           ConfigProvider.layer(
             ConfigProvider.fromEnv({
               env: {
-                T3CODE_DESKTOP_UPDATE_REPOSITORY: "ATruePerson/azure-code",
+                AZURE_DESKTOP_UPDATE_REPOSITORY: "ATruePerson/azure-code",
               },
             }),
           ),
@@ -172,10 +172,10 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       resolveDesktopRuntimeDependencies(
         {
           "@effect/platform-node": "catalog:",
-          "@t3tools/contracts": "workspace:*",
-          "@t3tools/shared": "workspace:*",
-          "@t3tools/ssh": "workspace:*",
-          "@t3tools/tailscale": "workspace:*",
+          "@azure/contracts": "workspace:*",
+          "@azure/shared": "workspace:*",
+          "@azure/ssh": "workspace:*",
+          "@azure/tailscale": "workspace:*",
           effect: "catalog:",
           electron: "41.5.0",
         },
@@ -365,7 +365,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.equal(mac.productName, "Azure Code");
       assert.equal(mac.artifactName, "Azure-Code-${version}-${arch}.${ext}");
       assert.deepStrictEqual(mac.mac && (mac.mac as Record<string, unknown>).protocols, [
-        { name: "Azure Code", schemes: ["azure-code", "t3code"] },
+        { name: "Azure Code", schemes: ["azure-code", "azure"] },
       ]);
       assert.equal(linux.appId, "com.atrueperson.azurecode");
       assert.equal(linux.productName, "Azure Code");
@@ -376,7 +376,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         { StartupWMClass: "azure-code" },
       );
       assert.deepStrictEqual((linux.linux as Record<string, unknown>).protocols, [
-        { name: "Azure Code", schemes: ["azure-code", "t3code"] },
+        { name: "Azure Code", schemes: ["azure-code", "azure"] },
       ]);
       for (const config of [mac, linux, win]) {
         assert.deepStrictEqual(config.electronLanguages, DESKTOP_ELECTRON_LANGUAGES);
@@ -427,24 +427,24 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
   it("derives macOS passkey signing configuration from the Clerk publishable key", () => {
     const configuration = resolveMacPasskeySigningConfiguration({
-      T3CODE_APPLE_TEAM_ID: "abc1234567",
-      T3CODE_MACOS_PROVISIONING_PROFILE: "/tmp/t3code.provisionprofile",
-      T3CODE_CLERK_PUBLISHABLE_KEY: `pk_test_${btoa("example.clerk.accounts.dev$")}`,
+      AZURE_APPLE_TEAM_ID: "abc1234567",
+      AZURE_MACOS_PROVISIONING_PROFILE: "/tmp/azure.provisionprofile",
+      AZURE_CLERK_PUBLISHABLE_KEY: `pk_test_${btoa("example.clerk.accounts.dev$")}`,
     });
 
     assert.deepStrictEqual(configuration, {
       appId: "com.atrueperson.azurecode",
       teamId: "ABC1234567",
       rpDomains: ["example.clerk.accounts.dev"],
-      provisioningProfilePath: "/tmp/t3code.provisionprofile",
+      provisioningProfilePath: "/tmp/azure.provisionprofile",
     });
   });
 
   it("normalizes explicit macOS passkey RP domains and renders required entitlements", () => {
     const configuration = resolveMacPasskeySigningConfiguration({
-      T3CODE_APPLE_TEAM_ID: "ABC1234567",
-      T3CODE_MACOS_PROVISIONING_PROFILE: "/tmp/t3code.provisionprofile",
-      T3CODE_CLERK_PASSKEY_RP_DOMAINS:
+      AZURE_APPLE_TEAM_ID: "ABC1234567",
+      AZURE_MACOS_PROVISIONING_PROFILE: "/tmp/azure.provisionprofile",
+      AZURE_CLERK_PASSKEY_RP_DOMAINS:
         " Clerk.Example.com,example.clerk.accounts.dev,clerk.example.com ",
     });
     const entitlements = renderMacPasskeyEntitlements(configuration);
@@ -470,21 +470,21 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     };
 
     const missingProfileError = captureError({
-      T3CODE_APPLE_TEAM_ID: "ABC1234567",
-      T3CODE_CLERK_PASSKEY_RP_DOMAINS: "example.clerk.accounts.dev",
+      AZURE_APPLE_TEAM_ID: "ABC1234567",
+      AZURE_CLERK_PASSKEY_RP_DOMAINS: "example.clerk.accounts.dev",
     });
     assert.instanceOf(missingProfileError, MissingMacPasskeyProvisioningProfileError);
     assert.equal(
       missingProfileError.message,
-      "T3CODE_MACOS_PROVISIONING_PROFILE must point to an Associated Domains provisioning profile.",
+      "AZURE_MACOS_PROVISIONING_PROFILE must point to an Associated Domains provisioning profile.",
     );
 
     const unsafeDomain =
       "https://domain-user:domain-secret@example.clerk.accounts.dev/path?token=query-secret";
     const invalidDomainError = captureError({
-      T3CODE_APPLE_TEAM_ID: "ABC1234567",
-      T3CODE_MACOS_PROVISIONING_PROFILE: "/tmp/t3code.provisionprofile",
-      T3CODE_CLERK_PASSKEY_RP_DOMAINS: unsafeDomain,
+      AZURE_APPLE_TEAM_ID: "ABC1234567",
+      AZURE_MACOS_PROVISIONING_PROFILE: "/tmp/azure.provisionprofile",
+      AZURE_CLERK_PASSKEY_RP_DOMAINS: unsafeDomain,
     });
     assert.instanceOf(invalidDomainError, InvalidMacPasskeyRpDomainError);
     assert.equal(invalidDomainError.reason, "scheme-not-allowed");
@@ -500,20 +500,20 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.throws(
       () =>
         resolveMacPasskeySigningConfiguration({
-          T3CODE_APPLE_TEAM_ID: "ABC1234567",
-          T3CODE_MACOS_PROVISIONING_PROFILE: "/tmp/t3code.provisionprofile",
-          T3CODE_CLERK_PASSKEY_RP_DOMAINS: "example.clerk.accounts.dev:8443",
+          AZURE_APPLE_TEAM_ID: "ABC1234567",
+          AZURE_MACOS_PROVISIONING_PROFILE: "/tmp/azure.provisionprofile",
+          AZURE_CLERK_PASSKEY_RP_DOMAINS: "example.clerk.accounts.dev:8443",
         }),
       /Invalid passkey RP domain/u,
     );
     const invalidPublishableKeyError = captureError({
-      T3CODE_APPLE_TEAM_ID: "ABC1234567",
-      T3CODE_MACOS_PROVISIONING_PROFILE: "/tmp/t3code.provisionprofile",
-      T3CODE_CLERK_PUBLISHABLE_KEY: "pk_test_%",
+      AZURE_APPLE_TEAM_ID: "ABC1234567",
+      AZURE_MACOS_PROVISIONING_PROFILE: "/tmp/azure.provisionprofile",
+      AZURE_CLERK_PUBLISHABLE_KEY: "pk_test_%",
     });
     assert.instanceOf(invalidPublishableKeyError, InvalidMacPasskeyPublishableKeyError);
     assert.ok(invalidPublishableKeyError.cause);
-    assert.equal(invalidPublishableKeyError.message, "T3CODE_CLERK_PUBLISHABLE_KEY is invalid.");
+    assert.equal(invalidPublishableKeyError.message, "AZURE_CLERK_PUBLISHABLE_KEY is invalid.");
     assert.notProperty(invalidPublishableKeyError, "publishableKey");
     assert.notInclude(invalidPublishableKeyError.message, "pk_test_%");
   });
@@ -546,15 +546,15 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       Effect.gen(function* () {
         const config = yield* createBuildConfig("mac", "dmg", "1.2.3", true, false, undefined, {
           entitlementsPath: "/tmp/entitlements.mac.plist",
-          provisioningProfilePath: "/tmp/t3code.provisionprofile",
+          provisioningProfilePath: "/tmp/azure.provisionprofile",
         });
 
         const mac = config.mac as Record<string, unknown>;
         assert.equal(config.appId, "com.atrueperson.azurecode");
         assert.equal(mac.entitlements, "/tmp/entitlements.mac.plist");
-        assert.equal(mac.provisioningProfile, "/tmp/t3code.provisionprofile");
+        assert.equal(mac.provisioningProfile, "/tmp/azure.provisionprofile");
         assert.deepStrictEqual(mac.protocols, [
-          { name: "Azure Code", schemes: ["azure-code", "t3code"] },
+          { name: "Azure Code", schemes: ["azure-code", "azure"] },
         ]);
       }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
@@ -774,11 +774,11 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           ConfigProvider.layer(
             ConfigProvider.fromEnv({
               env: {
-                T3CODE_DESKTOP_SKIP_BUILD: "true",
-                T3CODE_DESKTOP_KEEP_STAGE: "true",
-                T3CODE_DESKTOP_SIGNED: "true",
-                T3CODE_DESKTOP_VERBOSE: "true",
-                T3CODE_DESKTOP_MOCK_UPDATES: "true",
+                AZURE_DESKTOP_SKIP_BUILD: "true",
+                AZURE_DESKTOP_KEEP_STAGE: "true",
+                AZURE_DESKTOP_SIGNED: "true",
+                AZURE_DESKTOP_VERBOSE: "true",
+                AZURE_DESKTOP_MOCK_UPDATES: "true",
               },
             }),
           ),

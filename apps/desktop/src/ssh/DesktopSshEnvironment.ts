@@ -2,10 +2,10 @@ import type {
   DesktopDiscoveredSshHost,
   DesktopSshEnvironmentBootstrap,
   DesktopSshEnvironmentTarget,
-} from "@t3tools/contracts";
-import * as NetService from "@t3tools/shared/Net";
-import * as SshAuth from "@t3tools/ssh/auth";
-import { discoverSshHosts } from "@t3tools/ssh/config";
+} from "@azure/contracts";
+import * as NetService from "@azure/shared/Net";
+import * as SshAuth from "@azure/ssh/auth";
+import { discoverSshHosts } from "@azure/ssh/config";
 import {
   SshCommandError,
   SshHostDiscoveryError,
@@ -14,8 +14,8 @@ import {
   SshPairingError,
   SshPasswordPromptError,
   SshReadinessError,
-} from "@t3tools/ssh/errors";
-import * as SshTunnel from "@t3tools/ssh/tunnel";
+} from "@azure/ssh/errors";
+import * as SshTunnel from "@azure/ssh/tunnel";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -62,7 +62,7 @@ export class DesktopSshEnvironment extends Context.Service<
       target: DesktopSshEnvironmentTarget,
     ) => Effect.Effect<void, DesktopSshEnvironmentOperationError>;
   }
->()("@t3tools/desktop/ssh/DesktopSshEnvironment") {}
+>()("@azure/desktop/ssh/DesktopSshEnvironment") {}
 
 export interface DesktopSshEnvironmentLayerOptions {
   readonly resolveCliPackageSpec?: () => string;

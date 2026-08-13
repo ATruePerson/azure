@@ -5,7 +5,7 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeOS from "node:os";
 
-import type { ProviderDriverKind } from "@t3tools/contracts";
+import type { ProviderDriverKind } from "@azure/contracts";
 
 const MAX_AZURE_MD_BYTES = 64 * 1024;
 const MAX_MEMORY_FILE_BYTES = 256 * 1024;

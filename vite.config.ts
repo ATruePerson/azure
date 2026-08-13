@@ -68,7 +68,7 @@ export default defineConfig({
       "apps/mobile/uniwind-types.d.ts",
     ],
     plugins: ["eslint", "oxc", "react", "unicorn", "typescript"],
-    jsPlugins: ["./oxlint-plugin-t3code/index.ts"],
+    jsPlugins: ["./oxlint-plugin-azure/index.ts"],
     categories: {
       correctness: "warn",
       suspicious: "warn",
@@ -105,17 +105,17 @@ export default defineConfig({
         {
           paths: [
             {
-              name: "@t3tools/client-runtime",
+              name: "@azure/client-runtime",
               message:
-                "Import from an explicit @t3tools/client-runtime/* subpath. The package has no root export.",
+                "Import from an explicit @azure/client-runtime/* subpath. The package has no root export.",
             },
           ],
         },
       ],
-      "t3code/no-global-process-runtime": "error",
-      "t3code/no-inline-schema-compile": "warn",
-      "t3code/no-manual-effect-runtime-in-tests": "error",
-      "t3code/namespace-node-imports": "error",
+      "azure/no-global-process-runtime": "error",
+      "azure/no-inline-schema-compile": "warn",
+      "azure/no-manual-effect-runtime-in-tests": "error",
+      "azure/namespace-node-imports": "error",
     },
     options: {
       // Revisit once Oxlint's tsgolint path can integrate with @effect/tsgo diagnostics.

@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/contracts",
+  "name": "@azure/contracts",
   "version": "0.0.32",
   "private": true,
   "files": [

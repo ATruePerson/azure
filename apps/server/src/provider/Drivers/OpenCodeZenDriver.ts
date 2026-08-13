@@ -3,7 +3,7 @@ import {
   OpenCodeZenSettings,
   ProviderDriverKind,
   type OpenCodeZenSettings as OpenCodeZenSettingsType,
-} from "@t3tools/contracts";
+} from "@azure/contracts";
 import * as Schema from "effect/Schema";
 import { makeOpenAICompatibleDriver } from "./OpenAICompatibleDriver.ts";
 

@@ -19,7 +19,7 @@ import {
   ApprovalRequestId,
   ThreadId,
   type ProviderRuntimeEvent,
-} from "@t3tools/contracts";
+} from "@azure/contracts";
 
 import {
   makeOpenAICompatibleAdapter,

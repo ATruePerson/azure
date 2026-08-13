@@ -3,7 +3,7 @@
  *
  * @module usageFormat
  */
-import { UsageDay, type UsageSummaryInput } from "@t3tools/contracts";
+import { UsageDay, type UsageSummaryInput } from "@azure/contracts";
 
 const CURRENCY = new Intl.NumberFormat("en-US", {
   style: "currency",

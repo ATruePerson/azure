@@ -1,9 +1,9 @@
-import { ManagedRelay } from "@t3tools/client-runtime/relay";
+import { ManagedRelay } from "@azure/client-runtime/relay";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SecureStore from "expo-secure-store";
 
-const MANAGED_RELAY_TOKEN_CACHE_KEY = "t3code.cloud.relay-access-tokens";
+const MANAGED_RELAY_TOKEN_CACHE_KEY = "azure.cloud.relay-access-tokens";
 const MANAGED_RELAY_TOKEN_CACHE_VERSION = 1;
 
 const ManagedRelayAccessTokenCacheEntrySchema = Schema.Struct({

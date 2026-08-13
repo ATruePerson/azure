@@ -8,7 +8,7 @@ import {
   OpenRouterSettings,
   OpenCodeSettings,
   ProviderDriverKind,
-} from "@t3tools/contracts";
+} from "@azure/contracts";
 import type * as Schema from "effect/Schema";
 import {
   ClaudeAI,

@@ -5,7 +5,7 @@ import {
 import {
   collectComposerInlineTokens,
   type ComposerInlineToken,
-} from "@t3tools/shared/composerInlineTokens";
+} from "@azure/shared/composerInlineTokens";
 
 export type ComposerPromptSegment =
   | {

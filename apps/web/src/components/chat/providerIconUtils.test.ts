@@ -1,4 +1,4 @@
-import { ProviderDriverKind } from "@t3tools/contracts";
+import { ProviderDriverKind } from "@azure/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { PROVIDER_ICON_BY_PROVIDER } from "./providerIconUtils";

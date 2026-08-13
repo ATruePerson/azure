@@ -3,7 +3,7 @@ import {
   OpenRouterSettings,
   ProviderDriverKind,
   type OpenRouterSettings as OpenRouterSettingsType,
-} from "@t3tools/contracts";
+} from "@azure/contracts";
 import * as Schema from "effect/Schema";
 import { makeOpenAICompatibleDriver } from "./OpenAICompatibleDriver.ts";
 

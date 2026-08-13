@@ -5,12 +5,12 @@ import {
   type ServerProvider,
   type ServerProviderModel,
   type ServerProviderAuth,
-} from "@t3tools/contracts";
+} from "@azure/contracts";
 import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientRequest } from "effect/unstable/http";
-import { createModelCapabilities, resolveModelContextWindow } from "@t3tools/shared/model";
+import { createModelCapabilities, resolveModelContextWindow } from "@azure/shared/model";
 import {
   OpenAICompatibleAuthError,
   OpenAICompatibleMalformedResponseError,

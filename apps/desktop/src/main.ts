@@ -14,10 +14,10 @@ import * as Option from "effect/Option";
 
 import * as Electron from "electron";
 
-import * as NetService from "@t3tools/shared/Net";
-import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { resolveRemoteT3CliPackageSpec } from "@t3tools/ssh/command";
-import type { RemoteT3RunnerOptions } from "@t3tools/ssh/tunnel";
+import * as NetService from "@azure/shared/Net";
+import { HostProcessArchitecture, HostProcessPlatform } from "@azure/shared/hostProcess";
+import { resolveRemoteT3CliPackageSpec } from "@azure/ssh/command";
+import type { RemoteT3RunnerOptions } from "@azure/ssh/tunnel";
 import serverPackageJson from "../../server/package.json" with { type: "json" };
 
 import * as DesktopIpc from "./ipc/DesktopIpc.ts";

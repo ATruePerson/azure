@@ -1,4 +1,4 @@
-import type { PreviewSessionSnapshot, PreviewAnnotationPayload } from "@t3tools/contracts";
+import type { PreviewSessionSnapshot, PreviewAnnotationPayload } from "@azure/contracts";
 import { FileText, Image as ImageIcon, ListChecks, Play, TerminalSquare } from "lucide-react";
 import type { ReactNode } from "react";
 

@@ -1,4 +1,4 @@
-import { fromLenientJson } from "@t3tools/shared/schemaJson";
+import { fromLenientJson } from "@azure/shared/schemaJson";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
@@ -52,7 +52,7 @@ function resolveEarlyDesktopSettingsPath(input: {
   readonly joinPath: JoinPath;
   readonly pathExists?: (path: string) => boolean;
 }): string {
-  const t3Home = Option.fromUndefinedOr(input.env.T3CODE_HOME);
+  const t3Home = Option.fromUndefinedOr(input.env.AZURE_HOME);
   const legacyBaseDir = input.joinPath(input.homeDirectory, LEGACY_DESKTOP_BASE_DIR_NAME);
   const baseDir = resolveDesktopBaseDir({
     homeDirectory: input.homeDirectory,

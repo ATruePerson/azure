@@ -7,8 +7,8 @@
  * terminal surfaces point at terminal session ids, file surfaces point at
  * workspace paths, and diff/files remain singleton surfaces.
  */
-import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import { scopedThreadKey } from "@azure/client-runtime/environment";
+import type { ScopedThreadRef } from "@azure/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -50,7 +50,7 @@ export type RightPanelSurface =
   | { id: "progress"; kind: "progress" }
   | { id: "overview"; kind: "overview" };
 
-const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
+const RIGHT_PANEL_STORAGE_KEY = "azure:right-panel-state:v2";
 // v11 adds the singleton Overview surface while preserving every existing tab.
 const RIGHT_PANEL_STORAGE_VERSION = 11;
 

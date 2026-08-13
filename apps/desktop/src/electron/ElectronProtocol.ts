@@ -11,8 +11,8 @@ import * as Electron from "electron";
 export const DESKTOP_HOST = "app";
 export const DESKTOP_PRODUCTION_SCHEME = "azure-code";
 export const DESKTOP_DEVELOPMENT_SCHEME = "azure-code-dev";
-export const DESKTOP_LEGACY_PRODUCTION_SCHEME = "t3code";
-export const DESKTOP_LEGACY_DEVELOPMENT_SCHEME = "t3code-dev";
+export const DESKTOP_LEGACY_PRODUCTION_SCHEME = "azure";
+export const DESKTOP_LEGACY_DEVELOPMENT_SCHEME = "azure-dev";
 export const DESKTOP_PRODUCTION_SCHEMES = [
   DESKTOP_PRODUCTION_SCHEME,
   DESKTOP_LEGACY_PRODUCTION_SCHEME,
@@ -84,7 +84,7 @@ export class ElectronProtocol extends Context.Service<
       input: DesktopProtocolRegistrationInput,
     ) => Effect.Effect<void, ElectronProtocolRegistrationError, Scope.Scope>;
   }
->()("@t3tools/desktop/electron/ElectronProtocol") {}
+>()("@azure/desktop/electron/ElectronProtocol") {}
 
 export function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrationInput): string {
   const clerkOrigin = input.clerkFrontendApiHostname

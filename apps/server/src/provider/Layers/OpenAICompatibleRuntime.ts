@@ -20,7 +20,7 @@ import {
   type ProviderSendTurnInput,
   type ProviderSessionStartInput,
   type ProviderTurnStartResult,
-} from "@t3tools/contracts";
+} from "@azure/contracts";
 import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -34,7 +34,7 @@ import type {
   ProviderAdapterShape,
   ProviderContextCompactionResult,
 } from "../Services/ProviderAdapter.ts";
-import { resolveModelContextWindow } from "@t3tools/shared/model";
+import { resolveModelContextWindow } from "@azure/shared/model";
 import { ProviderAdapterSessionNotFoundError, ProviderAdapterValidationError } from "../Errors.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 

@@ -1,4 +1,4 @@
-import type { ServerProviderModel } from "@t3tools/contracts";
+import type { ServerProviderModel } from "@azure/contracts";
 
 export const CHATGPT_WEB_MODEL_PREFIX = "chatgpt-web/";
 

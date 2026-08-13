@@ -12,7 +12,7 @@ describe("filesystem browse model", () => {
     expect(getFilesystemBrowsePath("~/projects/t3")).toEqual({
       isBrowsing: true,
       directoryPath: "~/projects/",
-      filterQuery: "t3",
+      filterQuery: "azure",
       parentPath: "~/",
       canBrowseUp: true,
     });

@@ -300,7 +300,7 @@ export const AzureMcpToolkitRegistrationFor = (gateway: AzureMcpGateway) =>
 const AzureMcpToolkitRegistrationLive = Layer.effectDiscard(registerAzureMcpTools());
 
 const McpTransportLive = McpServer.layerHttp({
-  name: "T3 Code",
+  name: "Azure Code",
   version: packageJson.version,
   path: "/mcp",
   protocols: [McpProtocol.v2025_06_18],

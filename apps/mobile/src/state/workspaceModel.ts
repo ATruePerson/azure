@@ -1,7 +1,7 @@
-import { type EnvironmentShellSummary } from "@t3tools/client-runtime/state/shell";
-import { type NetworkStatus } from "@t3tools/client-runtime/connection";
-import { type EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
-import type { EnvironmentId, ServerConfig } from "@t3tools/contracts";
+import { type EnvironmentShellSummary } from "@azure/client-runtime/state/shell";
+import { type NetworkStatus } from "@azure/client-runtime/connection";
+import { type EnvironmentConnectionPhase } from "@azure/client-runtime/connection";
+import type { EnvironmentId, ServerConfig } from "@azure/contracts";
 
 import type { EnvironmentPresentation } from "./environments";
 

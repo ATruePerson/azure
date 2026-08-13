@@ -1,9 +1,9 @@
-import type { ChatAttachment, ModelSelection } from "@t3tools/contracts";
-import { TextGenerationError } from "@t3tools/contracts";
+import type { ChatAttachment, ModelSelection } from "@azure/contracts";
+import { TextGenerationError } from "@azure/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientRequest } from "effect/unstable/http";
-import { extractJsonObject } from "@t3tools/shared/schemaJson";
+import { extractJsonObject } from "@azure/shared/schemaJson";
 import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
@@ -15,7 +15,7 @@ import {
   sanitizePrTitle,
   sanitizeThreadTitle,
 } from "./TextGenerationUtils.ts";
-import { sanitizeBranchFragment } from "@t3tools/shared/git";
+import { sanitizeBranchFragment } from "@azure/shared/git";
 import * as TextGeneration from "./TextGeneration.ts";
 
 export interface OpenAICompatibleTextGenerationOptions {

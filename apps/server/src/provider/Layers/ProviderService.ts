@@ -27,9 +27,9 @@ import {
   type ProviderDriverKind,
   type ProviderRuntimeEvent,
   type ProviderSession,
-} from "@t3tools/contracts";
+} from "@azure/contracts";
 import { randomUUID } from "node:crypto";
-import { causeErrorTag } from "@t3tools/shared/observability";
+import { causeErrorTag } from "@azure/shared/observability";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

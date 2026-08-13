@@ -10,7 +10,7 @@ import type {
   CodexCapabilities,
   CodexCapabilityItem,
   ServerProviderSkill,
-} from "@t3tools/contracts";
+} from "@azure/contracts";
 import { parse as parseYaml } from "yaml";
 
 const MAX_ENTRY_BYTES = 64 * 1024;

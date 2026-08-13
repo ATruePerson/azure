@@ -1,14 +1,11 @@
-import {
-  ConnectionPersistenceError,
-  EnvironmentCacheStore,
-} from "@t3tools/client-runtime/platform";
+import { ConnectionPersistenceError, EnvironmentCacheStore } from "@azure/client-runtime/platform";
 import {
   type EnvironmentId,
   OrchestrationShellSnapshot,
   OrchestrationThreadDetailSnapshot,
   ServerConfig,
   VcsListRefsResult,
-} from "@t3tools/contracts";
+} from "@azure/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";

@@ -1,4 +1,4 @@
-import type { UsageProviderKind } from "@t3tools/contracts";
+import type { UsageProviderKind } from "@azure/contracts";
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import type { DailyTotals } from "../../usage/usageMerge";

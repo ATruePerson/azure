@@ -1,5 +1,5 @@
-import type { ContextMenuItem, PreviewSessionSnapshot } from "@t3tools/contracts";
-import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
+import type { ContextMenuItem, PreviewSessionSnapshot } from "@azure/contracts";
+import { getTerminalLabel } from "@azure/shared/terminalLabels";
 import {
   Bot,
   FileDiff,

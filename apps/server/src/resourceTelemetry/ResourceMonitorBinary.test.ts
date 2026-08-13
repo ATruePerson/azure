@@ -3,7 +3,7 @@ import {
   HostProcessArchitecture,
   HostProcessEnvironment,
   HostProcessPlatform,
-} from "@t3tools/shared/hostProcess";
+} from "@azure/shared/hostProcess";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -28,7 +28,7 @@ describe("ResourceMonitorBinary", () => {
         Effect.provideService(HostProcessArchitecture, "x64"),
         Effect.provideService(ResourceMonitorBinary.ResourceMonitorHostLinuxLibc, "musl"),
         Effect.provideService(HostProcessEnvironment, {
-          T3CODE_RESOURCE_MONITOR_PATH: binaryPath,
+          AZURE_RESOURCE_MONITOR_PATH: binaryPath,
         }),
       );
 
@@ -51,7 +51,7 @@ describe("ResourceMonitorBinary", () => {
         Effect.provideService(HostProcessPlatform, "freebsd"),
         Effect.provideService(HostProcessArchitecture, "ia32"),
         Effect.provideService(HostProcessEnvironment, {
-          T3CODE_RESOURCE_MONITOR_PATH: binaryPath,
+          AZURE_RESOURCE_MONITOR_PATH: binaryPath,
         }),
       );
 
@@ -75,7 +75,7 @@ describe("ResourceMonitorBinary", () => {
         Effect.provideService(HostProcessArchitecture, "x64"),
         Effect.provideService(ResourceMonitorBinary.ResourceMonitorHostLinuxLibc, "gnu"),
         Effect.provideService(HostProcessEnvironment, {
-          T3CODE_RESOURCE_MONITOR_PATH: binaryPath,
+          AZURE_RESOURCE_MONITOR_PATH: binaryPath,
         }),
       );
       const error = yield* Effect.flip(service.resolve);

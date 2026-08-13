@@ -1,6 +1,6 @@
 # Remote Architecture
 
-> For maintainers. Using T3 Code? See [docs/user](../user/).
+> For maintainers. Using Azure Code? See [docs/user](../user/).
 
 Remote environments are shipped, not planned. Direct, bearer-paired, relay-tunneled, Tailscale, and
 desktop-managed SSH access all exist today. This document describes the model they share and where
@@ -97,7 +97,7 @@ model: core owns environments, pairing, and connection lifecycle, and providers 
 Tailscale is the first provider, and T3 manages more than discovery. When `tailscaleServeEnabled` is
 set, the server acquires a Tailscale serve mapping for its actual listening port at startup with
 `ensureTailscaleServe` and releases it with `disableTailscaleServe` on scope close
-(`apps/server/src/server.ts`, using [`@t3tools/tailscale`](../../packages/tailscale/src/tailscale.ts)).
+(`apps/server/src/server.ts`, using [`@azure/tailscale`](../../packages/tailscale/src/tailscale.ts)).
 Endpoint identifiers are synthesized in `apps/desktop/src/backend/tailscaleEndpointProvider.ts` with
 `private-network` reachability.
 
@@ -106,7 +106,7 @@ Endpoint identifiers are synthesized in `apps/desktop/src/backend/tailscaleEndpo
 A hosted pairing request is a bootstrap URL for the static web app, not a transport:
 
 ```text
-https://app.t3.codes/pair?host=https://backend.example.com:3773#token=PAIRCODE
+https://app.azure.codes/pair?host=https://backend.example.com:3773#token=PAIRCODE
 ```
 
 The hosted app reads `host`, takes the token from the URL hash, exchanges it directly with that

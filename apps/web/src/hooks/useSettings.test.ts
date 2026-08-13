@@ -1,9 +1,5 @@
-import {
-  DEFAULT_SERVER_SETTINGS,
-  ProviderDriverKind,
-  ProviderInstanceId,
-} from "@t3tools/contracts";
-import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
+import { DEFAULT_SERVER_SETTINGS, ProviderDriverKind, ProviderInstanceId } from "@azure/contracts";
+import { DEFAULT_CLIENT_SETTINGS } from "@azure/contracts/settings";
 import { describe, expect, it } from "vite-plus/test";
 
 import { mergeEnvironmentSettings, resolveEnvironmentIdentificationMode } from "./useSettings";

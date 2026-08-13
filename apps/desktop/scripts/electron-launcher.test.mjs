@@ -13,7 +13,7 @@ describe("electron development launcher", () => {
   it("uses the isolated Azure macOS identity", () => {
     assert.equal(APP_DISPLAY_NAME, "Azure Code");
     assert.equal(APP_BUNDLE_ID, "com.atrueperson.azurecode");
-    assert.deepEqual(APP_PROTOCOL_SCHEMES, ["azure-code", "t3code"]);
+    assert.deepEqual(APP_PROTOCOL_SCHEMES, ["azure-code", "azure"]);
   });
 
   it("uses captured values only as fallbacks for a live runner environment", () => {
@@ -23,8 +23,8 @@ describe("electron development launcher", () => {
       desktopRoot: "/repo/apps/desktop",
       environment: {
         VITE_DEV_SERVER_URL: "http://127.0.0.1:8526",
-        T3CODE_PORT: "16566",
-        T3CODE_HOME: "/tmp/t3",
+        AZURE_PORT: "16566",
+        AZURE_HOME: "/tmp/t3",
       },
     });
 
@@ -35,9 +35,9 @@ describe("electron development launcher", () => {
     assert.notInclude(script, "\nexport VITE_DEV_SERVER_URL=");
     assert.include(
       script,
-      "exec '/repo/node_modules/electron/Electron' --t3code-dev-root='/repo/apps/desktop' '/repo/apps/desktop/dist-electron/main.cjs' \"$@\"",
+      "exec '/repo/node_modules/electron/Electron' --azure-dev-root='/repo/apps/desktop' '/repo/apps/desktop/dist-electron/main.cjs' \"$@\"",
     );
-    assert.include(script, "T3CODE_PORT");
+    assert.include(script, "AZURE_PORT");
   });
 
   it("repairs Electron before loading the package entrypoint", () => {

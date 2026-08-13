@@ -1,4 +1,4 @@
-import type { EnvironmentId, TerminalAttachInput } from "@t3tools/contracts";
+import type { EnvironmentId, TerminalAttachInput } from "@azure/contracts";
 
 export interface ThreadTerminalSubscriptionIdentity {
   readonly environmentId: EnvironmentId;

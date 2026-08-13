@@ -1,6 +1,6 @@
 # Server Update Architecture
 
-> For maintainers. Using T3 Code? See [docs/user](../user/).
+> For maintainers. Using Azure Code? See [docs/user](../user/).
 
 Remote server updates use one stable systemd launcher. Foreground CLI processes do not self-update,
 and a running server never edits its systemd unit or durable service state.
@@ -64,7 +64,7 @@ The protocol version is part of the safety boundary. A target that requires data
 blocked when the installed launcher is too old. Upgrade the launcher once with:
 
 ```sh
-npx t3@<version> service update
+npx azure@<version> service update
 ```
 
 The local command stops the unit, selects the new launcher and exact runtime, then restarts the

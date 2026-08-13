@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Plan: seamless `npx t3 connect` for remote boxes</title>
+<title>Plan: seamless `npx azure connect` for remote boxes</title>
 <style>
   :root {
     --bg: #000;
@@ -86,17 +86,17 @@
 <body>
 <main>
 
-<h1>Seamless <code>npx t3 connect</code> for remote boxes</h1>
+<h1>Seamless <code>npx azure connect</code> for remote boxes</h1>
 <p class="sub">Design principle: <strong>the smallest diff that ships the UX.</strong> No relay/infra changes, no new backend surface, no new auth primitives &mdash; every step reuses code that already exists. One PR, built as four phases with clear commit boundaries &mdash; each phase compiles, passes tests, and leaves the product working, so the PR reviews commit-by-commit. (Phase 4, web-triggered update, is an optional follow-up PR.)</p>
 
 <div class="terminal">
-$ npx t3 connect<br><br>
+$ npx azure connect<br><br>
 To set up T3 Connect, open this URL and sign in:<br>
-&nbsp;&nbsp;<span class="b">https://app.t3.codes/connect#B64URL_STATE_AND_CHALLENGE</span><br><br>
+&nbsp;&nbsp;<span class="b">https://app.azure.codes/connect#B64URL_STATE_AND_CHALLENGE</span><br><br>
 Enter your authentication code: <span class="dim">[code]</span><br><br>
 <span class="g">Connected as theo@t3.gg!</span><br><br>
-Run T3 Code in the background whenever this machine boots? (y/n): y<br><br>
-<span class="g">T3 Code is set up and ready to go.</span>
+Run Azure Code in the background whenever this machine boots? (y/n): y<br><br>
+<span class="g">Azure Code is set up and ready to go.</span>
 </div>
 
 <h2>Why this is a small change</h2>
@@ -125,7 +125,7 @@ Run T3 Code in the background whenever this machine boots? (y/n): y<br><br>
   <rect x="300" y="16" width="220" height="44" rx="8" fill="#121212" stroke="#2a2a2a"/>
   <rect x="580" y="16" width="220" height="44" rx="8" fill="#121212" stroke="#2a2a2a"/>
   <text x="130" y="43" fill="#fff" font-size="14" font-weight="600" text-anchor="middle">Remote box &#8212; t3 CLI</text>
-  <text x="410" y="43" fill="#fff" font-size="14" font-weight="600" text-anchor="middle">Laptop &#8212; app.t3.codes</text>
+  <text x="410" y="43" fill="#fff" font-size="14" font-weight="600" text-anchor="middle">Laptop &#8212; app.azure.codes</text>
   <text x="690" y="43" fill="#fff" font-size="14" font-weight="600" text-anchor="middle">Clerk</text>
   <line x1="130" y1="60" x2="130" y2="450" stroke="#2a2a2a"/>
   <line x1="410" y1="60" x2="410" y2="450" stroke="#2a2a2a"/>
@@ -179,7 +179,7 @@ Run T3 Code in the background whenever this machine boots? (y/n): y<br><br>
   <li><strong>State check without a backend:</strong> the callback page displays one authorization blob of <code>code.state</code>; the CLI splits it and verifies <code>state</code> matches what it generated. One line on each side, preserves the loopback flow's CSRF check.</li>
   <li><strong>Phishing is addressed with copy, not code:</strong> the callback page shows <em>which account</em> is being connected ("Connecting as theo@&hellip;") and warns: <em>"Only enter this code in a terminal session you started yourself."</em> No mechanism needed.</li>
   <li><strong>Code expiry is a non-issue:</strong> Clerk auth codes live 10 minutes &mdash; the same timeout the existing loopback flow already uses. Wrong/expired code &#8594; friendly retry that reprints the URL.</li>
-  <li><strong>One external config step:</strong> register <code>https://app.t3.codes/connect/callback</code> as an allowed redirect URI on the existing Clerk CLI OAuth client. No new client, no new scopes.</li>
+  <li><strong>One external config step:</strong> register <code>https://app.azure.codes/connect/callback</code> as an allowed redirect URI on the existing Clerk CLI OAuth client. No new client, no new scopes.</li>
 </ul>
 </div>
 
@@ -202,7 +202,7 @@ Run T3 Code in the background whenever this machine boots? (y/n): y<br><br>
   </tr>
   <tr>
     <td><span class="pill new">3</span></td>
-    <td><strong>Background on boot &mdash; Linux first</strong> (the SSH case). One new module: pinned runtime install to <code>~/.t3/runtime/versions/&lt;v&gt;</code> + <code>current</code> symlink, systemd <em>user</em> unit with absolute node/t3 paths, <code>enable-linger</code>. y/n prompt at the end of <code>connect</code>; teardown in <code>logout</code>. Install and service-start failures must land in a log file (under <code>~/.t3/userdata/logs/</code>) whose path is printed at connect time &mdash; systemd user units fail invisibly otherwise. Unit-file generation is pure string-building &#8594; trivially testable. macOS launchd / Windows follow as 3b/3c only if wanted.</td>
+    <td><strong>Background on boot &mdash; Linux first</strong> (the SSH case). One new module: pinned runtime install to <code>~/.azure/runtime/versions/&lt;v&gt;</code> + <code>current</code> symlink, systemd <em>user</em> unit with absolute node/t3 paths, <code>enable-linger</code>. y/n prompt at the end of <code>connect</code>; teardown in <code>logout</code>. Install and service-start failures must land in a log file (under <code>~/.azure/userdata/logs/</code>) whose path is printed at connect time &mdash; systemd user units fail invisibly otherwise. Unit-file generation is pure string-building &#8594; trivially testable. macOS launchd / Windows follow as 3b/3c only if wanted.</td>
     <td><code>cloud/bootService.ts</code> (new)<br><code>cli/connect.ts</code> (+prompt/teardown)</td>
     <td>~250</td>
   </tr>
@@ -215,18 +215,18 @@ Run T3 Code in the background whenever this machine boots? (y/n): y<br><br>
 </table>
 
 <h3>Runtime layout (phase 3)</h3>
-<pre><code>~/.t3/runtime/
+<pre><code>~/.azure/runtime/
 ├── versions/0.0.27/        &larr; npm install --prefix (gets native deps right: node-pty etc.)
 └── current -> versions/0.0.27
 
-~/.config/systemd/user/t3code.service   &larr; ExecStart=/abs/path/node .../current/.../t3 serve
+~/.config/systemd/user/azure.service   &larr; ExecStart=/abs/path/node .../current/.../t3 serve
 loginctl enable-linger $USER            &larr; survives SSH logout / reboot</code></pre>
-<p class="kv">Why a real <code>npm install</code> and not "reuse the npx binary": the npx cache is ephemeral and <code>t3</code> ships native deps (<code>node-pty</code>, <code>@ff-labs/fff-node</code>) that need per-platform prebuilds. Why pinned and not <code>npx t3@latest</code> in the unit: a boot-time registry fetch means the box may simply not come up (network down, PATH-less systemd env, nvm). Deterministic boot; updates happen out-of-band (phase 4 follow-up) or by re-running <code>npx t3 connect</code>.</p>
+<p class="kv">Why a real <code>npm install</code> and not "reuse the npx binary": the npx cache is ephemeral and <code>t3</code> ships native deps (<code>node-pty</code>, <code>@ff-labs/fff-node</code>) that need per-platform prebuilds. Why pinned and not <code>npx azure@latest</code> in the unit: a boot-time registry fetch means the box may simply not come up (network down, PATH-less systemd env, nvm). Deterministic boot; updates happen out-of-band (phase 4 follow-up) or by re-running <code>npx azure connect</code>.</p>
 
 <h2>Explicitly not doing</h2>
 <ul>
   <li><span class="no">&#10007;</span> Relay / <code>infra</code> / contracts changes &mdash; none, in any phase</li>
-  <li><span class="no">&#10007;</span> Short-link service (<code>app.t3.codes/c/AB7K</code>) &mdash; only matters for hand-typing; revisit if ever needed</li>
+  <li><span class="no">&#10007;</span> Short-link service (<code>app.azure.codes/c/AB7K</code>) &mdash; only matters for hand-typing; revisit if ever needed</li>
   <li><span class="no">&#10007;</span> RFC 8628 device grant &mdash; wrong UX direction, unverified Clerk support</li>
   <li><span class="no">&#10007;</span> Auto-update loop in the daemon &mdash; web-triggered only (phase 4 follow-up), user stays in control</li>
   <li><span class="no">&#10007;</span> Project auto-registration &mdash; workspace assumed set up; the web UI handles the rest</li>
@@ -246,7 +246,7 @@ loginctl enable-linger $USER            &larr; survives SSH logout / reboot</cod
   <li>Auth: hosted out-of-band OAuth redirect on Clerk PKCE (not relay-brokered pairing, not device grant) &mdash; chosen for minimal new surface.</li>
   <li>URL: stateless static page, no backend short-link.</li>
   <li>Service: real per-user login service (systemd user + linger first); detect + offer install, never silent.</li>
-  <li>Binary: pinned managed runtime under <code>~/.t3</code>; interactive <code>npx</code> usage untouched.</li>
+  <li>Binary: pinned managed runtime under <code>~/.azure</code>; interactive <code>npx</code> usage untouched.</li>
   <li>Updates: not always-latest; web UI surfaces available updates with one-click trigger (phase 4 follow-up).</li>
   <li>Delivery: one PR with a commit per phase (green tree at every boundary), not separate PRs.</li>
   <li>Workspace: assumed already set up; no auto-registration.</li>

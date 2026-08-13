@@ -24,7 +24,7 @@ import {
   PROVIDER_API_KEY_ENVIRONMENT_BY_DRIVER,
   type ServerProvider,
   type ServerProviderModel,
-} from "@t3tools/contracts";
+} from "@azure/contracts";
 
 import { cn } from "../../lib/utils";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";

@@ -8,7 +8,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
 import * as Electron from "electron";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessPlatform } from "@azure/shared/hostProcess";
 
 import * as DesktopEarlyElectronStartup from "./DesktopEarlyElectronStartup.ts";
 import {
@@ -55,7 +55,7 @@ export class DesktopPreReadyElectronOptions extends Context.Service<
     readonly isDevelopment: boolean;
     readonly userDataPath: string;
   }
->()("@t3tools/desktop/app/DesktopPreReadyPlatform/DesktopPreReadyElectronOptions") {}
+>()("@azure/desktop/app/DesktopPreReadyPlatform/DesktopPreReadyElectronOptions") {}
 
 interface DesktopPreReadyPathsInput {
   readonly env: NodeJS.ProcessEnv;
@@ -67,7 +67,7 @@ interface DesktopPreReadyPathsInput {
 
 export function resolveDesktopPreReadyPaths(input: DesktopPreReadyPathsInput) {
   const isDevelopment = (input.env.VITE_DEV_SERVER_URL?.trim().length ?? 0) > 0;
-  const t3Home = Option.fromUndefinedOr(input.env.T3CODE_HOME);
+  const t3Home = Option.fromUndefinedOr(input.env.AZURE_HOME);
   const baseDir = resolveDesktopBaseDir({
     homeDirectory: input.homeDirectory,
     joinPath: input.joinPath,
@@ -84,7 +84,7 @@ export function resolveDesktopPreReadyPaths(input: DesktopPreReadyPathsInput) {
         : input.env.XDG_CONFIG_HOME?.trim() || input.joinPath(input.homeDirectory, ".config");
   const legacyUserDataPath = input.joinPath(
     appDataDirectory,
-    isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)",
+    isDevelopment ? "Azure Code (Dev)" : "Azure Code (Alpha)",
   );
 
   return {

@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessPlatform } from "@azure/shared/hostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -82,8 +82,8 @@ describe("DesktopPreReadyPlatform", () => {
 
   it("resolves the legacy production state and user-data paths before startup", () => {
     const existingPaths = new Set([
-      "/Users/test/.t3",
-      "/Users/test/Library/Application Support/T3 Code (Alpha)",
+      "/Users/test/.azure",
+      "/Users/test/Library/Application Support/Azure Code (Alpha)",
     ]);
 
     assert.deepEqual(
@@ -95,9 +95,9 @@ describe("DesktopPreReadyPlatform", () => {
         pathExists: (path) => existingPaths.has(path),
       }),
       {
-        stateDir: "/Users/test/.t3/userdata",
+        stateDir: "/Users/test/.azure/userdata",
         isDevelopment: false,
-        userDataPath: "/Users/test/Library/Application Support/T3 Code (Alpha)",
+        userDataPath: "/Users/test/Library/Application Support/Azure Code (Alpha)",
       },
     );
   });
@@ -107,7 +107,7 @@ describe("DesktopPreReadyPlatform", () => {
     () =>
       Effect.gen(function* () {
         class ClerkShaped extends Context.Service<ClerkShaped, { readonly ready: true }>()(
-          "@t3tools/desktop/app/DesktopPreReadyPlatform.test/ClerkShaped",
+          "@azure/desktop/app/DesktopPreReadyPlatform.test/ClerkShaped",
         ) {}
 
         const events: Array<string> = [];

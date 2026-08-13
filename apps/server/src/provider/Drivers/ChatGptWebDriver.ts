@@ -1,4 +1,4 @@
-import { ProviderDriverKind } from "@t3tools/contracts";
+import { ProviderDriverKind } from "@azure/contracts";
 
 import { makeCodexCliDriver, type CodexCliDriverEnv } from "./CodexCliDriver.ts";
 import { chatGptWebModels } from "./ChatGptWebModels.ts";

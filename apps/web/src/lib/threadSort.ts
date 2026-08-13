@@ -4,4 +4,4 @@ export {
   sortThreads,
   toSortableTimestamp,
   type ThreadSortInput,
-} from "@t3tools/client-runtime/state/thread-sort";
+} from "@azure/client-runtime/state/thread-sort";

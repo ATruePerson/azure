@@ -1,8 +1,8 @@
 /**
  * UsageService - scans provider transcripts and returns priced daily usage.
  *
- * The scan reads the provider CLIs' own session files rather than T3 Code's
- * orchestration projections, so usage covers turns driven outside T3 Code too.
+ * The scan reads the provider CLIs' own session files rather than Azure Code's
+ * orchestration projections, so usage covers turns driven outside Azure Code too.
  * This is the approach `ccusage` takes.
  *
  * Transcripts are append-only, so parsed records are memoised per file by
@@ -20,7 +20,7 @@ import {
   type UsageSummary,
   type UsageSummaryInput,
   UsageReadError,
-} from "@t3tools/contracts";
+} from "@azure/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -90,7 +90,7 @@ export class UsageService extends Context.Service<
   {
     readonly readSummary: (input: UsageSummaryInput) => Effect.Effect<UsageSummary, UsageReadError>;
   }
->()("t3/usage/UsageService") {}
+>()("azure/usage/UsageService") {}
 
 /** Empty summary, for suites that only need the RPC surface to resolve. */
 export const layerTest = Layer.succeed(

@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/tailscale",
+  "name": "@azure/tailscale",
   "private": true,
   "type": "module",
   "exports": {
@@ -13,8 +13,8 @@
     "test": "vp test run"
   },
   "dependencies": {
+    "@azure/shared": "workspace:*",
     "@effect/platform-node": "catalog:",
-    "@t3tools/shared": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

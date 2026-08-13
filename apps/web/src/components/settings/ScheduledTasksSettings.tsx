@@ -1,5 +1,5 @@
 import { CalendarClockIcon, PlayIcon } from "lucide-react";
-import type { EnvironmentId, ScheduledTask } from "@t3tools/contracts";
+import type { EnvironmentId, ScheduledTask } from "@azure/contracts";
 import { usePrimaryEnvironment } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";

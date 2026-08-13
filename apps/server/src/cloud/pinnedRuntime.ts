@@ -12,7 +12,7 @@ import * as ProcessRunner from "../processRunner.ts";
  * A pinned runtime is an exact `t3@<version>` npm-installed into
  * <baseDir>/runtime/versions/<version>. The boot service points its systemd
  * unit here, and server self-update installs the target version here before
- * switching over, never `npx t3`, whose cache is ephemeral and whose
+ * switching over, never `npx azure`, whose cache is ephemeral and whose
  * registry fetch at boot would make startup depend on the network.
  */
 
@@ -36,7 +36,7 @@ export function pinnedRuntimePaths(
   const versionDir = path.join(baseDir, PINNED_RUNTIME_DIR, "versions", version);
   return {
     versionDir,
-    entryPath: path.join(versionDir, "node_modules", "t3", "dist", "bin.mjs"),
+    entryPath: path.join(versionDir, "node_modules", "azure", "dist", "bin.mjs"),
     sentinelPath: path.join(versionDir, ".install-complete"),
   };
 }
@@ -146,7 +146,7 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
     );
   const stagingPaths: PinnedRuntimePaths = {
     versionDir: stagingDir,
-    entryPath: input.path.join(stagingDir, "node_modules", "t3", "dist", "bin.mjs"),
+    entryPath: input.path.join(stagingDir, "node_modules", "azure", "dist", "bin.mjs"),
     sentinelPath: input.path.join(stagingDir, ".install-complete"),
   };
 

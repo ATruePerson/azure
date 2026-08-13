@@ -9,7 +9,7 @@ import {
   ScheduledTask,
   type ScheduledTask as ScheduledTaskValue,
   type ScheduledTaskSchedule,
-} from "@t3tools/contracts";
+} from "@azure/contracts";
 
 const MAX_TASKS_BYTES = 512 * 1024;
 const TASKS_FILE = "scheduled-tasks.json";

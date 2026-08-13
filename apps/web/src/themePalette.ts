@@ -11,10 +11,10 @@ export const EMBER_THEME_LABEL = "Ember";
 export const IRIS_THEME_ID = "iris" as const;
 export const IRIS_THEME_LABEL = "Iris";
 export const THEME_FILE_VERSION = 1 as const;
-export const CUSTOM_THEMES_STORAGE_KEY = "t3code:themes:v1";
-export const THEME_FOLLOW_SYSTEM_STORAGE_KEY = "t3code:theme-follow-system";
-export const THEME_APPEARANCE_MODE_STORAGE_KEY = "t3code:theme-appearance-mode";
-export const THEME_HALVES_STORAGE_KEY = "t3code:theme-halves:v1";
+export const CUSTOM_THEMES_STORAGE_KEY = "azure:themes:v1";
+export const THEME_FOLLOW_SYSTEM_STORAGE_KEY = "azure:theme-follow-system";
+export const THEME_APPEARANCE_MODE_STORAGE_KEY = "azure:theme-appearance-mode";
+export const THEME_HALVES_STORAGE_KEY = "azure:theme-halves:v1";
 
 const LEGACY_T3_CHAT_DARK_THEME_ID = "t3-chat-dark";
 
@@ -322,7 +322,7 @@ function legacyThemeMode(theme: ThemePreference): ThemeAppearance | null {
  * Maintainer palettes use product color roles rather than Tailwind or component
  * names so the same definitions can feed other clients and native surfaces.
  */
-// Measured from the live t3.chat default theme. Translucent chat surfaces are
+// Measured from the live azure.chat default theme. Translucent chat surfaces are
 // flattened over --chat-background so this opaque palette reproduces the
 // pixels users see after Azure Chat's blur and noise layers are composited.
 const T3_CHAT_LIGHT_COLORS: ThemeColors = {

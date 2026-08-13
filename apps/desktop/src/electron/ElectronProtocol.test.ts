@@ -30,11 +30,11 @@ describe("ElectronProtocol", () => {
     assert.equal(ElectronProtocol.getDesktopOrigin(true), "azure-code-dev://app");
     assert.deepEqual(ElectronProtocol.getDesktopSchemeAliases("azure-code"), [
       "azure-code",
-      "t3code",
+      "azure",
     ]);
     assert.deepEqual(ElectronProtocol.getDesktopSchemeAliases("azure-code-dev"), [
       "azure-code-dev",
-      "t3code-dev",
+      "azure-dev",
     ]);
   });
 
@@ -53,7 +53,7 @@ describe("ElectronProtocol", () => {
             scheme: "azure-code-dev",
             targetOrigin: new URL("http://127.0.0.1:3773/"),
             backendOrigin: new URL("http://127.0.0.1:3774/"),
-            clerkFrontendApiHostname: "clerk.t3.codes",
+            clerkFrontendApiHostname: "clerk.azure.codes",
           });
           assert.isDefined(handler);
 
@@ -72,7 +72,7 @@ describe("ElectronProtocol", () => {
           assert.equal(yield* Effect.promise(() => response.text()), "ok");
           assert.include(
             response.headers.get("content-security-policy") ?? "",
-            "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://clerk.t3.codes https://challenges.cloudflare.com",
+            "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://clerk.azure.codes https://challenges.cloudflare.com",
           );
           assert.include(
             response.headers.get("content-security-policy") ?? "",
@@ -80,18 +80,18 @@ describe("ElectronProtocol", () => {
           );
           assert.include(
             response.headers.get("content-security-policy") ?? "",
-            "img-src 'self' azure-code-dev: t3code-dev: blob: data: http: https:",
+            "img-src 'self' azure-code-dev: azure-dev: blob: data: http: https:",
           );
           assert.include(
             response.headers.get("content-security-policy") ?? "",
-            "font-src 'self' azure-code-dev: t3code-dev: data:",
+            "font-src 'self' azure-code-dev: azure-dev: data:",
           );
         }),
       );
 
       assert.deepEqual(
         handleMock.mock.calls.map((call) => call[0]),
-        ["azure-code-dev", "t3code-dev"],
+        ["azure-code-dev", "azure-dev"],
       );
       assert.equal(netFetchMock.mock.calls[0]?.[0], "http://127.0.0.1:3773/api/health?verbose=1");
       const forwardedHeaders = new Headers(netFetchMock.mock.calls[0]?.[1]?.headers);
@@ -99,7 +99,7 @@ describe("ElectronProtocol", () => {
       assert.isNull(forwardedHeaders.get("origin"));
       assert.isNull(forwardedHeaders.get("referer"));
       assert.isNull(forwardedHeaders.get("sec-fetch-site"));
-      assert.deepEqual(unhandleMock.mock.calls, [["azure-code-dev"], ["t3code-dev"]]);
+      assert.deepEqual(unhandleMock.mock.calls, [["azure-code-dev"], ["azure-dev"]]);
     }).pipe(Effect.provide(ElectronProtocol.layer)),
   );
 
@@ -215,7 +215,7 @@ describe("ElectronProtocol", () => {
       scheme: "azure-code",
       targetOrigin: new URL("http://127.0.0.1:3773/"),
       backendOrigin: new URL("http://127.0.0.1:3773/"),
-      clerkFrontendApiHostname: "clerk.t3.codes",
+      clerkFrontendApiHostname: "clerk.azure.codes",
     });
     const directives = Object.fromEntries(
       policy.split("; ").map((directive) => {
@@ -228,19 +228,19 @@ describe("ElectronProtocol", () => {
       "'self'",
       "'unsafe-inline'",
       "'wasm-unsafe-eval'",
-      "https://clerk.t3.codes",
+      "https://clerk.azure.codes",
       "https://challenges.cloudflare.com",
     ]);
     assert.deepEqual(directives["connect-src"], ["'self'", "http:", "https:", "ws:", "wss:"]);
     assert.deepEqual(directives["img-src"], [
       "'self'",
       "azure-code:",
-      "t3code:",
+      "azure:",
       "blob:",
       "data:",
       "http:",
       "https:",
     ]);
-    assert.deepEqual(directives["font-src"], ["'self'", "azure-code:", "t3code:", "data:"]);
+    assert.deepEqual(directives["font-src"], ["'self'", "azure-code:", "azure:", "data:"]);
   });
 });

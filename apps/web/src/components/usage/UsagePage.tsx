@@ -1,4 +1,4 @@
-import type { UsageProviderKind } from "@t3tools/contracts";
+import type { UsageProviderKind } from "@azure/contracts";
 import { RefreshCwIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 

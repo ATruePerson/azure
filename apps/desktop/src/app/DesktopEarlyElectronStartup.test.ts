@@ -12,7 +12,7 @@ describe("DesktopEarlyElectronStartup", () => {
 
   it("reads the persisted linux password-store preference before Electron is ready", () => {
     const preference = resolveEarlyLinuxPasswordStorePreference({
-      env: { T3CODE_HOME: "/home/user/.t3-test" },
+      env: { AZURE_HOME: "/home/user/.t3-test" },
       homeDirectory: "/home/user",
       joinPath,
       readFileString: (path) => {
@@ -26,7 +26,7 @@ describe("DesktopEarlyElectronStartup", () => {
 
   it("accepts JSONC in the early desktop settings file", () => {
     const preference = resolveEarlyLinuxPasswordStorePreference({
-      env: { T3CODE_HOME: "/home/user/.t3-test" },
+      env: { AZURE_HOME: "/home/user/.t3-test" },
       homeDirectory: "/home/user",
       joinPath,
       readFileString: () => `{
@@ -53,7 +53,7 @@ describe("DesktopEarlyElectronStartup", () => {
 
   it("preserves absolute root paths when resolving early settings", () => {
     const preference = resolveEarlyLinuxPasswordStorePreference({
-      env: { T3CODE_HOME: "/" },
+      env: { AZURE_HOME: "/" },
       homeDirectory: "/home/user",
       joinPath,
       readFileString: (path) => {
@@ -68,7 +68,7 @@ describe("DesktopEarlyElectronStartup", () => {
   it("resolves the early linux Electron switches", () => {
     const options = resolveEarlyLinuxElectronOptions({
       env: {
-        T3CODE_HOME: "/home/user/.t3-test",
+        AZURE_HOME: "/home/user/.t3-test",
         XDG_CURRENT_DESKTOP: "niri",
         VITE_DEV_SERVER_URL: "http://127.0.0.1:5173",
       },
@@ -89,7 +89,7 @@ describe("DesktopEarlyElectronStartup", () => {
   it("resolves the production linux WM class", () => {
     const options = resolveEarlyLinuxElectronOptions({
       env: {
-        T3CODE_HOME: "/home/user/.t3-test",
+        AZURE_HOME: "/home/user/.t3-test",
       },
       homeDirectory: "/home/user",
       joinPath,
@@ -99,7 +99,7 @@ describe("DesktopEarlyElectronStartup", () => {
     assert.equal(options.linuxWmClass, "azure-code");
   });
 
-  it("keeps implicit development state under ~/.azure-code/dev when T3CODE_HOME is unset", () => {
+  it("keeps implicit development state under ~/.azure-code/dev when AZURE_HOME is unset", () => {
     const preference = resolveEarlyLinuxPasswordStorePreference({
       env: {
         VITE_DEV_SERVER_URL: "http://127.0.0.1:5173",
@@ -118,8 +118,8 @@ describe("DesktopEarlyElectronStartup", () => {
   it.each([
     {
       name: "old-only",
-      existingPaths: new Set(["/home/user/.t3"]),
-      expectedPath: "/home/user/.t3/dev/desktop-settings.json",
+      existingPaths: new Set(["/home/user/.azure"]),
+      expectedPath: "/home/user/.azure/dev/desktop-settings.json",
     },
     {
       name: "new-only",
@@ -128,8 +128,8 @@ describe("DesktopEarlyElectronStartup", () => {
     },
     {
       name: "both-present",
-      existingPaths: new Set(["/home/user/.t3", "/home/user/.azure-code"]),
-      expectedPath: "/home/user/.t3/dev/desktop-settings.json",
+      existingPaths: new Set(["/home/user/.azure", "/home/user/.azure-code"]),
+      expectedPath: "/home/user/.azure/dev/desktop-settings.json",
     },
   ])(
     "selects the $name implicit state path deterministically",
@@ -149,10 +149,10 @@ describe("DesktopEarlyElectronStartup", () => {
     },
   );
 
-  it("treats whitespace-only T3CODE_HOME as unconfigured in development", () => {
+  it("treats whitespace-only AZURE_HOME as unconfigured in development", () => {
     const preference = resolveEarlyLinuxPasswordStorePreference({
       env: {
-        T3CODE_HOME: "   ",
+        AZURE_HOME: "   ",
         VITE_DEV_SERVER_URL: "http://127.0.0.1:5173",
       },
       homeDirectory: "/home/user",

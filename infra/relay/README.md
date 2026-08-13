@@ -7,7 +7,7 @@ The relay is the hosted control plane for T3 Connect. It helps clients discover 
 remote environments, manages the cloud-side records needed for those connections, and delivers
 optional mobile notifications and Live Activities.
 
-The relay is intentionally not in the hot path for normal T3 Code traffic. After a client connects,
+The relay is intentionally not in the hot path for normal Azure Code traffic. After a client connects,
 regular API and WebSocket traffic goes directly between that client and the selected environment.
 See the [T3 Connect architecture overview](../../docs/internals/t3-code-connect-auth-flow.html) for the larger system
 design.
@@ -16,7 +16,7 @@ design.
 
 The relay currently owns:
 
-- Linking T3 Code environments to a cloud account.
+- Linking Azure Code environments to a cloud account.
 - Provisioning and tracking managed environment endpoints.
 - Issuing short-lived credentials used to connect clients to linked environments.
 - Listing linked environments and registered mobile devices for an account.
@@ -79,7 +79,7 @@ dependencies represented at their boundary rather than mocking internal behavior
 The relay deploys through Alchemy:
 
 ```sh
-vp run --filter t3code-relay deploy
+vp run --filter azure-relay deploy
 ```
 
 The stack provisions the Cloudflare Worker and queues, managed endpoint resources, database
@@ -95,8 +95,8 @@ PlanetScale branch and runtime role for local development, so deploy `prod` befo
 developer stages:
 
 ```sh
-vp run --filter t3code-relay deploy -- --stage prod
-vp run --filter t3code-relay deploy -- --env-file .env.local
+vp run --filter azure-relay deploy -- --stage prod
+vp run --filter azure-relay deploy -- --env-file .env.local
 ```
 
 Alchemy defaults personal deployments to the `dev_$USER` stage. Relay custom domains apply the same
