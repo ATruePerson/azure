@@ -54,6 +54,12 @@ export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = 
     settingsSchema: CodexSettings,
   },
   {
+    value: ProviderDriverKind.make("chatgptWeb"),
+    label: "ChatGPT Web",
+    icon: OpenAI,
+    settingsSchema: CodexSettings,
+  },
+  {
     value: ProviderDriverKind.make("claudeAgent"),
     label: "Claude",
     icon: ClaudeAI,

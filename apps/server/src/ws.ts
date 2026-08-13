@@ -1552,6 +1552,7 @@ const makeWsRpcLayer = (
           observeRpcEffect(
             WS_METHODS.serverSetAzureSkillEnabled,
             Effect.promise(() => setAzureHomeSkillEnabled(skill.id, skill.enabled)).pipe(
+              Effect.tap(() => providerRegistry.refresh()),
               Effect.tapError(logCodexCapabilitiesError),
               Effect.mapError(mapCodexCapabilitiesError),
               Effect.scoped,
@@ -1564,6 +1565,9 @@ const makeWsRpcLayer = (
             Effect.promise(() =>
               setAzureHomeCapabilityEnabled(input.kind, input.id, input.enabled),
             ).pipe(
+              Effect.tap(() =>
+                input.kind === "skills" ? providerRegistry.refresh() : Effect.void,
+              ),
               Effect.tapError(logCodexCapabilitiesError),
               Effect.mapError(mapCodexCapabilitiesError),
               Effect.scoped,

@@ -41,3 +41,6 @@ node_modules/
 /.codex/
 /.claude/
 /.pnpm-store/
+
+# Nested Azure CLI backend (separate git repo, kept for reference)
+azure-cli/

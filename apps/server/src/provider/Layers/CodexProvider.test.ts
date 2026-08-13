@@ -259,6 +259,26 @@ it("ignores custom models that shadow a preferred slug", () => {
 });
 
 it.layer(NodeServices.layer)("Codex capability controls", (it) => {
+  it.effect("hydrates the ChatGPT Web legacy provider with its own driver identity", () =>
+    Effect.gen(function* () {
+      const chatGptWeb = ProviderDriverKind.make("chatgptWeb");
+      const instanceId = ProviderInstanceId.make("chatgptWeb");
+      const instances = deriveProviderInstanceConfigMap({
+        ...DEFAULT_SERVER_SETTINGS,
+        providers: {
+          ...DEFAULT_SERVER_SETTINGS.providers,
+          chatgptWeb: { ...DEFAULT_SERVER_SETTINGS.providers.chatgptWeb, homePath: "~/.codex-web" },
+        },
+      });
+
+      assert.deepStrictEqual(instances[instanceId]?.driver, chatGptWeb);
+      assert.deepStrictEqual(instances[instanceId]?.config, {
+        ...DEFAULT_SERVER_SETTINGS.providers.chatgptWeb,
+        homePath: "~/.codex-web",
+      });
+    }),
+  );
+
   it.effect("uses the selected instance's shadow home and environment", () =>
     Effect.gen(function* () {
       const instanceId = ProviderInstanceId.make("codex");

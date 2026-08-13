@@ -42,7 +42,8 @@ const CATEGORY_CONFIG: Readonly<
   hooks: {
     key: "hooks",
     title: "Hooks",
-    description: "See the lifecycle hooks Azure found in the local runtime.",
+    description:
+      "SessionStart and UserPromptSubmit run with every provider. SubagentStart is native-only.",
     searchId: "hooks",
     route: "/settings/hooks",
     icon: WebhookIcon,
@@ -50,7 +51,7 @@ const CATEGORY_CONFIG: Readonly<
   plugins: {
     key: "plugins",
     title: "Plugins",
-    description: "Manage installed plugins and see their logos, descriptions, and source.",
+    description: "Portable plugin skills and hooks are available to every provider.",
     searchId: "plugins",
     route: "/settings/plugins",
     icon: PuzzleIcon,
@@ -58,7 +59,7 @@ const CATEGORY_CONFIG: Readonly<
   skills: {
     key: "skills",
     title: "Skills",
-    description: "Manage the skills available to Azure in the local runtime.",
+    description: "Enabled Azure skills are available to every provider immediately.",
     searchId: "skills",
     route: "/settings/skills",
     icon: BookOpenIcon,
@@ -66,7 +67,8 @@ const CATEGORY_CONFIG: Readonly<
   mcp: {
     key: "mcpServers",
     title: "MCP",
-    description: "See configured MCP servers and their current auth or connection status.",
+    description:
+      "Enabled Azure MCP servers are shared by every provider after a fresh Azure session.",
     searchId: "mcp",
     route: "/settings/mcp",
     icon: PlugIcon,
@@ -166,9 +168,9 @@ function CapabilityRows({
     const detail = [item.description, item.detail].filter(Boolean).join(" · ");
     const controlDescription =
       item.control?._tag === "azure-skill"
-        ? "Toggle availability for Azure."
+        ? "Toggle availability for Azure. Skills refresh across providers immediately."
         : item.control?._tag === "azure-capability"
-          ? "Toggle availability for Azure. New sessions may be required."
+          ? "Toggle availability for Azure. Start a fresh Azure session after plugin, hook, or MCP changes."
           : item.control?._tag === "plugin"
             ? `Controlled by the ${item.control.pluginId} plugin.`
             : item.control?._tag === "unsupported"
@@ -296,7 +298,7 @@ export function CodexCapabilitiesSettings({
         <p className="mt-1 text-sm text-muted-foreground">
           {category
             ? CATEGORY_CONFIG[category].description
-            : "Azure checks the local runtime for hooks, plugins, skills, and MCP servers. Toggle availability for new sessions here."}
+            : "Azure skills are shared immediately. Portable plugins, hooks, and MCP changes apply after a fresh Azure session."}
         </p>
       </div>
       <div className="px-3">

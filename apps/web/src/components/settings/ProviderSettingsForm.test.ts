@@ -15,6 +15,9 @@ describe("ProviderSettingsForm helpers", () => {
     expect(PROVIDER_CLIENT_DEFINITIONS.map((definition) => definition.label)).toContain(
       "OpenRouter",
     );
+    expect(PROVIDER_CLIENT_DEFINITIONS.map((definition) => definition.label)).toContain(
+      "ChatGPT Web",
+    );
     expect(
       PROVIDER_CLIENT_DEFINITIONS.find((definition) => definition.label === "NVIDIA")?.icon,
     ).toBeDefined();

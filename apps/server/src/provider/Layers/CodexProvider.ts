@@ -414,7 +414,10 @@ function record(value: unknown): Readonly<Record<string, unknown>> | undefined {
 
 export const resolveCodexCapabilitiesTarget = Effect.fn("resolveCodexCapabilitiesTarget")(
   function* (entry: ProviderInstanceConfig | undefined) {
-    if (entry?.driver !== ProviderDriverKind.make("codex")) {
+    const isCodexBacked =
+      entry?.driver === ProviderDriverKind.make("codex") ||
+      entry?.driver === ProviderDriverKind.make("chatgptWeb");
+    if (!isCodexBacked) {
       return yield* new CodexCapabilityTargetError({
         detail: "The selected provider instance is not Codex.",
       });

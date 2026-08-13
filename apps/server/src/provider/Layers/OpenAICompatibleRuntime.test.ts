@@ -1,6 +1,9 @@
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
+import * as Option from "effect/Option";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import {
@@ -13,6 +16,7 @@ import { describe } from "vite-plus/test";
 import {
   ProviderDriverKind,
   ProviderInstanceId,
+  ApprovalRequestId,
   ThreadId,
   type ProviderRuntimeEvent,
 } from "@t3tools/contracts";
@@ -26,6 +30,7 @@ import {
   type OpenAICompatibleRuntimeOptions,
 } from "./OpenAICompatibleRuntime.ts";
 import { ProviderAdapterValidationError } from "../Errors.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 
 const provider = ProviderDriverKind.make("test-openai-compatible");
 const thread = (value: string) => ThreadId.make(value);
@@ -203,6 +208,169 @@ describe("OpenAICompatibleRuntime", () => {
     }),
   );
 
+  it.effect(
+    "executes Azure MCP calls in the same turn and sends the result back to the model",
+    () =>
+      Effect.gen(function* () {
+        const bodies: string[] = [];
+        const calls: Array<{ name: string; arguments: Record<string, unknown> }> = [];
+        const threadId = thread("azure-mcp-loop");
+        McpProviderSession.setMcpProviderSession({
+          environmentId: "environment" as never,
+          threadId,
+          providerSessionId: "provider-session",
+          providerInstanceId: ProviderInstanceId.make("test-openai-compatible"),
+          endpoint: "http://127.0.0.1/mcp",
+          authorizationHeader: "Bearer test",
+        });
+        const adapter = yield* makeAdapter(
+          clientFor(
+            () =>
+              bodies.length === 1
+                ? sse([
+                    sseData({
+                      choices: [
+                        {
+                          delta: {
+                            tool_calls: [
+                              {
+                                index: 0,
+                                id: "call-search",
+                                type: "function",
+                                function: {
+                                  name: "azure-search__search",
+                                  arguments: '{\"q\":\"Nvidia\"}',
+                                },
+                              },
+                            ],
+                          },
+                          finish_reason: "tool_calls",
+                        },
+                      ],
+                    }),
+                    "data: [DONE]\n\n",
+                  ])
+                : sse([
+                    sseData({
+                      choices: [{ delta: { content: "Found it" }, finish_reason: "stop" }],
+                    }),
+                    "data: [DONE]\n\n",
+                  ]),
+            bodies,
+          ),
+          {
+            mcpClientFactory: async () => ({
+              listTools: async () => [
+                {
+                  name: "azure-search__search",
+                  inputSchema: { type: "object" },
+                  annotations: { readOnlyHint: true, destructiveHint: false },
+                },
+              ],
+              callTool: async (input) => {
+                calls.push(input);
+                return { content: [{ type: "text", text: "result" }] };
+              },
+            }),
+          },
+        );
+        yield* adapter.startSession(startInput("azure-mcp-loop"));
+        yield* adapter.sendTurn({ threadId, input: "Find Nvidia" });
+        yield* Stream.runHead(
+          Stream.filter(adapter.streamEvents, (event) => event.type === "turn.completed"),
+        );
+        assert.deepStrictEqual(calls, [
+          { name: "azure-search__search", arguments: { q: "Nvidia" } },
+        ]);
+        assert.equal(bodies.length, 2);
+        assert.include(bodies[0]!, '"azure-search__search"');
+        assert.include(bodies[1]!, '"tool_call_id":"call-search"');
+        McpProviderSession.clearMcpProviderSession(threadId);
+      }),
+  );
+
+  it.effect("asks before non-read-only Azure MCP calls in approval-required mode", () =>
+    Effect.gen(function* () {
+      const threadId = thread("azure-mcp-approval");
+      let executed = false;
+      McpProviderSession.setMcpProviderSession({
+        environmentId: "environment" as never,
+        threadId,
+        providerSessionId: "provider-session",
+        providerInstanceId: ProviderInstanceId.make("test-openai-compatible"),
+        endpoint: "http://127.0.0.1/mcp",
+        authorizationHeader: "Bearer test",
+      });
+      let providerCalls = 0;
+      const adapter = yield* makeAdapter(
+        clientFor(() => {
+          providerCalls += 1;
+          return providerCalls === 1
+            ? sse([
+                sseData({
+                  choices: [
+                    {
+                      delta: {
+                        tool_calls: [
+                          {
+                            index: 0,
+                            id: "call-write",
+                            type: "function",
+                            function: { name: "azure-search__write", arguments: "{}" },
+                          },
+                        ],
+                      },
+                      finish_reason: "tool_calls",
+                    },
+                  ],
+                }),
+                "data: [DONE]\n\n",
+              ])
+            : sse([
+                sseData({ choices: [{ delta: { content: "declined" }, finish_reason: "stop" }] }),
+                "data: [DONE]\n\n",
+              ]);
+        }),
+        {
+          mcpClientFactory: async () => ({
+            listTools: async () => [
+              { name: "azure-search__write", inputSchema: { type: "object" } },
+            ],
+            callTool: async () => {
+              executed = true;
+              return { content: [] };
+            },
+          }),
+        },
+      );
+      const requested =
+        yield* Deferred.make<Extract<ProviderRuntimeEvent, { type: "request.opened" }>>();
+      const listen = yield* Stream.runForEach(adapter.streamEvents, (event) =>
+        event.type === "request.opened"
+          ? Deferred.succeed(requested, event).pipe(Effect.asVoid)
+          : Effect.void,
+      ).pipe(Effect.forkChild);
+      yield* adapter.startSession({
+        ...startInput("azure-mcp-approval"),
+        runtimeMode: "approval-required",
+      });
+      yield* adapter.sendTurn({ threadId, input: "Write it" });
+      const request = yield* Deferred.await(requested);
+      assert.equal(request.payload.requestType, "dynamic_tool_call");
+      yield* adapter.respondToRequest(
+        threadId,
+        ApprovalRequestId.make(String(request.requestId)),
+        "decline",
+      );
+      yield* Stream.runHead(
+        Stream.filter(adapter.streamEvents, (event) => event.type === "turn.completed"),
+      );
+      assert.isFalse(executed);
+      yield* Fiber.interrupt(listen);
+      McpProviderSession.clearMcpProviderSession(threadId);
+    }),
+  );
+
   it.effect("reconfigures an idle session without losing its conversation", () =>
     Effect.gen(function* () {
       const bodies: string[] = [];
@@ -250,6 +418,65 @@ describe("OpenAICompatibleRuntime", () => {
         '"messages":[{"role":"user","content":"first"},{"role":"assistant","content":"ok"},{"role":"user","content":"second"}]',
       );
     }),
+  );
+
+  it.effect(
+    "reuses an unchanged Nvidia session and waits for an active turn before reconfiguration",
+    () =>
+      Effect.gen(function* () {
+        let pendingRead: (() => void) | undefined;
+        const readPending = new Promise<void>((resolve) => {
+          pendingRead = resolve;
+        });
+        const hanging = new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(
+                encoder.encode(sseData({ choices: [{ delta: { content: "x" } }] })),
+              );
+            },
+            pull() {
+              pendingRead?.();
+              pendingRead = undefined;
+            },
+          }),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+        const adapter = yield* makeAdapter(
+          clientFor((request) => (request.method === "POST" ? hanging : response("{}"))),
+          { provider: ProviderDriverKind.make("nvidiaNim") },
+        );
+        const threadId = thread("nvidia-session-reuse");
+        const initial = {
+          ...startInput("nvidia-session-reuse"),
+          provider: ProviderDriverKind.make("nvidiaNim"),
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("nvidiaNim"),
+            model: "stepfun-ai/step-3.7-flash",
+          },
+        };
+        const first = yield* adapter.startSession(initial);
+        const reused = yield* adapter.startSession(initial);
+        assert.equal(reused.createdAt, first.createdAt);
+
+        const sent = yield* adapter.sendTurn({ threadId, input: "hello" }).pipe(Effect.forkChild);
+        yield* Effect.promise(() => readPending).pipe(Effect.timeout("1 second"));
+        const activeReuse = yield* adapter.startSession(initial);
+        assert.equal(activeReuse.createdAt, first.createdAt);
+        const reconfigure = adapter.startSession({
+          ...initial,
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("nvidiaNim"),
+            model: "nvidia/nemotron-3-ultra-550b-a55b",
+          },
+        });
+        const activeError = yield* reconfigure.pipe(Effect.flip);
+        assert.isTrue(Schema.is(ProviderAdapterValidationError)(activeError));
+        yield* adapter.interruptTurn(threadId);
+        yield* Fiber.join(sent);
+        const reconfigured = yield* reconfigure;
+        assert.equal(reconfigured.model, "nvidia/nemotron-3-ultra-550b-a55b");
+      }),
   );
 
   it.effect("uses unique turn ids across consecutive turns", () =>
@@ -502,8 +729,8 @@ describe("OpenAICompatibleRuntime", () => {
         .sendTurn({ threadId: thread("lifecycle"), input: "wait" })
         .pipe(Effect.forkChild);
       yield* Effect.promise(() => readPending).pipe(Effect.timeout("1 second"));
-      const restartError = yield* adapter.startSession(startInput("lifecycle")).pipe(Effect.flip);
-      assert.isTrue(Schema.is(ProviderAdapterValidationError)(restartError));
+      const reused = yield* adapter.startSession(startInput("lifecycle"));
+      assert.equal(reused.status, "running");
       yield* adapter.interruptTurn(thread("lifecycle"));
       yield* Fiber.join(send);
       yield* Stream.runHead(
@@ -542,6 +769,683 @@ describe("OpenAICompatibleRuntime", () => {
         assert.include(error.issue, "does not support attachments");
       }
       assert.equal(requests, 0);
+    }),
+  );
+
+  it.effect("enforces the 16-round Azure MCP tool-call limit", () =>
+    Effect.gen(function* () {
+      const threadId = thread("azure-mcp-round-limit");
+      const calls: Array<{ name: string; arguments: Record<string, unknown> }> = [];
+      McpProviderSession.setMcpProviderSession({
+        environmentId: "environment" as never,
+        threadId,
+        providerSessionId: "provider-session",
+        providerInstanceId: ProviderInstanceId.make("test-openai-compatible"),
+        endpoint: "http://127.0.0.1/mcp",
+        authorizationHeader: "Bearer test",
+      });
+      const adapter = yield* makeAdapter(
+        clientFor(() =>
+          sse([
+            sseData({
+              choices: [
+                {
+                  delta: {
+                    tool_calls: [
+                      {
+                        index: 0,
+                        id: "call-limit",
+                        type: "function",
+                        function: { name: "azure-search__search", arguments: '{"q":"x"}' },
+                      },
+                    ],
+                  },
+                  finish_reason: "tool_calls",
+                },
+              ],
+            }),
+            "data: [DONE]\n\n",
+          ]),
+        ),
+        {
+          mcpClientFactory: async () => ({
+            listTools: async () => [
+              {
+                name: "azure-search__search",
+                inputSchema: { type: "object" },
+                annotations: { readOnlyHint: true, destructiveHint: false },
+              },
+            ],
+            callTool: async (input) => {
+              calls.push(input);
+              return { content: [{ type: "text", text: "result" }] };
+            },
+          }),
+        },
+      );
+      yield* adapter.startSession(startInput("azure-mcp-round-limit"));
+      yield* adapter.sendTurn({ threadId, input: "loop" });
+      const completed = Option.getOrUndefined(
+        yield* Stream.runHead(
+          Stream.filter(adapter.streamEvents, (event) => event.type === "turn.completed"),
+        ),
+      );
+      assert.equal(completed?.type, "turn.completed");
+      if (completed?.type === "turn.completed") {
+        assert.equal(completed.payload.state, "failed");
+        assert.include(completed.payload.errorMessage ?? "", "tool-call limit (16)");
+      }
+      assert.equal(calls.length, 16);
+      McpProviderSession.clearMcpProviderSession(threadId);
+    }),
+  );
+
+  it.effect("reports an unknown Azure MCP tool without failing the turn", () =>
+    Effect.gen(function* () {
+      const bodies: string[] = [];
+      const threadId = thread("azure-mcp-unknown-tool");
+      McpProviderSession.setMcpProviderSession({
+        environmentId: "environment" as never,
+        threadId,
+        providerSessionId: "provider-session",
+        providerInstanceId: ProviderInstanceId.make("test-openai-compatible"),
+        endpoint: "http://127.0.0.1/mcp",
+        authorizationHeader: "Bearer test",
+      });
+      const adapter = yield* makeAdapter(
+        clientFor(
+          () =>
+            bodies.length === 1
+              ? sse([
+                  sseData({
+                    choices: [
+                      {
+                        delta: {
+                          tool_calls: [
+                            {
+                              index: 0,
+                              id: "call-missing",
+                              type: "function",
+                              function: { name: "azure-search__missing", arguments: "{}" },
+                            },
+                          ],
+                        },
+                        finish_reason: "tool_calls",
+                      },
+                    ],
+                  }),
+                  "data: [DONE]\n\n",
+                ])
+              : sse([
+                  sseData({ choices: [{ delta: { content: "done" }, finish_reason: "stop" }] }),
+                  "data: [DONE]\n\n",
+                ]),
+          bodies,
+        ),
+        {
+          mcpClientFactory: async () => ({
+            listTools: async () => [
+              { name: "azure-search__search", inputSchema: { type: "object" } },
+            ],
+            callTool: async () => ({ content: [] }),
+          }),
+        },
+      );
+      yield* adapter.startSession(startInput("azure-mcp-unknown-tool"));
+      yield* adapter.sendTurn({ threadId, input: "call missing" });
+      const completed = Option.getOrUndefined(
+        yield* Stream.runHead(
+          Stream.filter(adapter.streamEvents, (event) => event.type === "turn.completed"),
+        ),
+      );
+      assert.equal(completed?.type, "turn.completed");
+      assert.equal(completed?.payload.state, "completed");
+      assert.include(bodies[1]!, "Unknown Azure MCP tool 'azure-search__missing'");
+      McpProviderSession.clearMcpProviderSession(threadId);
+    }),
+  );
+
+  it.effect("reports malformed tool arguments without failing the turn", () =>
+    Effect.gen(function* () {
+      const bodies: string[] = [];
+      const threadId = thread("azure-mcp-malformed-args");
+      McpProviderSession.setMcpProviderSession({
+        environmentId: "environment" as never,
+        threadId,
+        providerSessionId: "provider-session",
+        providerInstanceId: ProviderInstanceId.make("test-openai-compatible"),
+        endpoint: "http://127.0.0.1/mcp",
+        authorizationHeader: "Bearer test",
+      });
+      const adapter = yield* makeAdapter(
+        clientFor(
+          () =>
+            bodies.length === 1
+              ? sse([
+                  sseData({
+                    choices: [
+                      {
+                        delta: {
+                          tool_calls: [
+                            {
+                              index: 0,
+                              id: "call-bad-args",
+                              type: "function",
+                              function: { name: "azure-search__search", arguments: "not-json" },
+                            },
+                          ],
+                        },
+                        finish_reason: "tool_calls",
+                      },
+                    ],
+                  }),
+                  "data: [DONE]\n\n",
+                ])
+              : sse([
+                  sseData({ choices: [{ delta: { content: "done" }, finish_reason: "stop" }] }),
+                  "data: [DONE]\n\n",
+                ]),
+          bodies,
+        ),
+        {
+          mcpClientFactory: async () => ({
+            listTools: async () => [
+              { name: "azure-search__search", inputSchema: { type: "object" } },
+            ],
+            callTool: async () => ({ content: [] }),
+          }),
+        },
+      );
+      yield* adapter.startSession(startInput("azure-mcp-malformed-args"));
+      yield* adapter.sendTurn({ threadId, input: "bad args" });
+      const completed = Option.getOrUndefined(
+        yield* Stream.runHead(
+          Stream.filter(adapter.streamEvents, (event) => event.type === "turn.completed"),
+        ),
+      );
+      assert.equal(completed?.type, "turn.completed");
+      assert.equal(completed?.payload.state, "completed");
+      assert.include(bodies[1]!, "Tool arguments must be valid JSON object");
+      McpProviderSession.clearMcpProviderSession(threadId);
+    }),
+  );
+
+  it.effect("auto mode auto-runs read-only Azure MCP tools and requests approval otherwise", () =>
+    Effect.gen(function* () {
+      const threadId = thread("azure-mcp-auto-mode");
+      const bodies: string[] = [];
+      const calls: Array<{ name: string; arguments: Record<string, unknown> }> = [];
+      McpProviderSession.setMcpProviderSession({
+        environmentId: "environment" as never,
+        threadId,
+        providerSessionId: "provider-session",
+        providerInstanceId: ProviderInstanceId.make("test-openai-compatible"),
+        endpoint: "http://127.0.0.1/mcp",
+        authorizationHeader: "Bearer test",
+      });
+      const adapter = yield* makeAdapter(
+        clientFor(
+          () =>
+            bodies.length === 1
+              ? sse([
+                  sseData({
+                    choices: [
+                      {
+                        delta: {
+                          tool_calls: [
+                            {
+                              index: 0,
+                              id: "call-read",
+                              type: "function",
+                              function: { name: "azure-search__search", arguments: "{}" },
+                            },
+                          ],
+                        },
+                        finish_reason: "tool_calls",
+                      },
+                    ],
+                  }),
+                  "data: [DONE]\n\n",
+                ])
+              : sse([
+                  sseData({ choices: [{ delta: { content: "done" }, finish_reason: "stop" }] }),
+                  "data: [DONE]\n\n",
+                ]),
+          bodies,
+        ),
+        {
+          mcpClientFactory: async () => ({
+            listTools: async () => [
+              {
+                name: "azure-search__search",
+                inputSchema: { type: "object" },
+                annotations: { readOnlyHint: true, destructiveHint: false },
+              },
+            ],
+            callTool: async (input) => {
+              calls.push(input);
+              return { content: [{ type: "text", text: "result" }] };
+            },
+          }),
+        },
+      );
+      const turnCompleted = yield* Ref.make(0);
+      const opened = yield* Ref.make(0);
+      const listen = yield* Stream.runForEach(adapter.streamEvents, (event) => {
+        if (event.type === "turn.completed") return Ref.update(turnCompleted, (n) => n + 1);
+        if (event.type === "request.opened") return Ref.update(opened, (n) => n + 1);
+        return Effect.void;
+      }).pipe(Effect.forkChild);
+      yield* adapter.startSession({
+        ...startInput("azure-mcp-auto-mode"),
+        runtimeMode: "auto",
+      });
+      yield* adapter.sendTurn({ threadId, input: "read only" });
+      for (let attempt = 0; attempt < 200 && (yield* Ref.get(turnCompleted)) < 1; attempt += 1) {
+        yield* Effect.yieldNow;
+      }
+      assert.deepStrictEqual(calls, [{ name: "azure-search__search", arguments: {} }]);
+      assert.equal(yield* Ref.get(opened), 0);
+      yield* Fiber.interrupt(listen);
+      McpProviderSession.clearMcpProviderSession(threadId);
+    }),
+  );
+
+  it.effect("acceptForSession approves the tool for the session and resets on a new session", () =>
+    Effect.gen(function* () {
+      const threadId = thread("azure-mcp-accept-session");
+      const calls: Array<{ name: string; arguments: Record<string, unknown> }> = [];
+      McpProviderSession.setMcpProviderSession({
+        environmentId: "environment" as never,
+        threadId,
+        providerSessionId: "provider-session",
+        providerInstanceId: ProviderInstanceId.make("test-openai-compatible"),
+        endpoint: "http://127.0.0.1/mcp",
+        authorizationHeader: "Bearer test",
+      });
+      let providerCalls = 0;
+      const adapter = yield* makeAdapter(
+        clientFor(() => {
+          providerCalls += 1;
+          return providerCalls % 2 === 1
+            ? sse([
+                sseData({
+                  choices: [
+                    {
+                      delta: {
+                        tool_calls: [
+                          {
+                            index: 0,
+                            id: "call-write",
+                            type: "function",
+                            function: { name: "azure-search__write", arguments: "{}" },
+                          },
+                        ],
+                      },
+                      finish_reason: "tool_calls",
+                    },
+                  ],
+                }),
+                "data: [DONE]\n\n",
+              ])
+            : sse([
+                sseData({ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }),
+                "data: [DONE]\n\n",
+              ]);
+        }),
+        {
+          mcpClientFactory: async () => ({
+            listTools: async () => [
+              { name: "azure-search__write", inputSchema: { type: "object" } },
+            ],
+            callTool: async (input) => {
+              calls.push(input);
+              return { content: [] };
+            },
+          }),
+        },
+      );
+      const opened = yield* Ref.make(0);
+      const turnCompleted = yield* Ref.make(0);
+      const listen = yield* Stream.runForEach(adapter.streamEvents, (event) => {
+        if (event.type === "request.opened") {
+          return Ref.update(opened, (count) => count + 1).pipe(
+            Effect.andThen(
+              adapter.respondToRequest(
+                threadId,
+                ApprovalRequestId.make(String(event.requestId)),
+                "acceptForSession",
+              ),
+            ),
+          );
+        }
+        if (event.type === "turn.completed") return Ref.update(turnCompleted, (n) => n + 1);
+        return Effect.void;
+      }).pipe(Effect.forkChild);
+      const waitForTurn = (count: number) =>
+        Effect.gen(function* () {
+          for (
+            let attempt = 0;
+            attempt < 200 && (yield* Ref.get(turnCompleted)) < count;
+            attempt += 1
+          ) {
+            yield* Effect.yieldNow;
+          }
+        });
+
+      yield* adapter.startSession({
+        ...startInput("azure-mcp-accept-session"),
+        runtimeMode: "approval-required",
+      });
+      yield* adapter.sendTurn({ threadId, input: "write one" });
+      yield* waitForTurn(1);
+      assert.equal(calls.length, 1);
+      assert.equal(yield* Ref.get(opened), 1);
+
+      // The same tool in the same session runs without a new request.
+      yield* adapter.sendTurn({ threadId, input: "write two" });
+      yield* waitForTurn(2);
+      assert.equal(calls.length, 2);
+      assert.equal(yield* Ref.get(opened), 1);
+
+      // A fresh session resets the accept-for-session grant.
+      yield* adapter.stopSession(threadId);
+      yield* adapter.startSession({
+        ...startInput("azure-mcp-accept-session"),
+        runtimeMode: "approval-required",
+      });
+      yield* adapter.sendTurn({ threadId, input: "write three" });
+      yield* waitForTurn(3);
+      assert.equal(calls.length, 3);
+      assert.equal(yield* Ref.get(opened), 2);
+
+      yield* Fiber.interrupt(listen);
+      McpProviderSession.clearMcpProviderSession(threadId);
+    }),
+  );
+
+  it.effect("fails open when the Azure MCP server errors during a tool call", () =>
+    Effect.gen(function* () {
+      const bodies: string[] = [];
+      const threadId = thread("azure-mcp-server-failure");
+      McpProviderSession.setMcpProviderSession({
+        environmentId: "environment" as never,
+        threadId,
+        providerSessionId: "provider-session",
+        providerInstanceId: ProviderInstanceId.make("test-openai-compatible"),
+        endpoint: "http://127.0.0.1/mcp",
+        authorizationHeader: "Bearer test",
+      });
+      const adapter = yield* makeAdapter(
+        clientFor(
+          () =>
+            bodies.length === 1
+              ? sse([
+                  sseData({
+                    choices: [
+                      {
+                        delta: {
+                          tool_calls: [
+                            {
+                              index: 0,
+                              id: "call-fail",
+                              type: "function",
+                              function: { name: "azure-search__search", arguments: "{}" },
+                            },
+                          ],
+                        },
+                        finish_reason: "tool_calls",
+                      },
+                    ],
+                  }),
+                  "data: [DONE]\n\n",
+                ])
+              : sse([
+                  sseData({ choices: [{ delta: { content: "done" }, finish_reason: "stop" }] }),
+                  "data: [DONE]\n\n",
+                ]),
+          bodies,
+        ),
+        {
+          mcpClientFactory: async () => ({
+            listTools: async () => [
+              {
+                name: "azure-search__search",
+                inputSchema: { type: "object" },
+                annotations: { readOnlyHint: true, destructiveHint: false },
+              },
+            ],
+            callTool: async () => {
+              throw new Error("server exploded");
+            },
+          }),
+        },
+      );
+      yield* adapter.startSession({
+        ...startInput("azure-mcp-server-failure"),
+        runtimeMode: "auto",
+      });
+      yield* adapter.sendTurn({ threadId, input: "query" });
+      const completed = Option.getOrUndefined(
+        yield* Stream.runHead(
+          Stream.filter(adapter.streamEvents, (event) => event.type === "turn.completed"),
+        ),
+      );
+      assert.equal(completed?.type, "turn.completed");
+      assert.equal(completed?.payload.state, "completed");
+      assert.include(bodies[1]!, "Azure MCP server failed while running this tool");
+      McpProviderSession.clearMcpProviderSession(threadId);
+    }),
+  );
+
+  it.effect("interrupts an Azure MCP tool loop while a tool call is in flight", () =>
+    Effect.gen(function* () {
+      const threadId = thread("azure-mcp-interrupt-loop");
+      McpProviderSession.setMcpProviderSession({
+        environmentId: "environment" as never,
+        threadId,
+        providerSessionId: "provider-session",
+        providerInstanceId: ProviderInstanceId.make("test-openai-compatible"),
+        endpoint: "http://127.0.0.1/mcp",
+        authorizationHeader: "Bearer test",
+      });
+      const inFlight = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const adapter = yield* makeAdapter(
+        clientFor(() =>
+          sse([
+            sseData({
+              choices: [
+                {
+                  delta: {
+                    tool_calls: [
+                      {
+                        index: 0,
+                        id: "call-hang",
+                        type: "function",
+                        function: { name: "azure-search__search", arguments: "{}" },
+                      },
+                    ],
+                  },
+                  finish_reason: "tool_calls",
+                },
+              ],
+            }),
+            "data: [DONE]\n\n",
+          ]),
+        ),
+        {
+          mcpClientFactory: async () => ({
+            listTools: async () => [
+              {
+                name: "azure-search__search",
+                inputSchema: { type: "object" },
+                annotations: { readOnlyHint: true, destructiveHint: false },
+              },
+            ],
+            callTool: () =>
+              new Promise<unknown>((resolve) => {
+                Effect.runSync(Deferred.succeed(inFlight, undefined));
+                Effect.runPromise(Deferred.await(release)).then(() => resolve({ content: [] }));
+              }),
+          }),
+        },
+      );
+      yield* adapter.startSession({
+        ...startInput("azure-mcp-interrupt-loop"),
+        runtimeMode: "auto",
+      });
+      const sent = yield* adapter.sendTurn({ threadId, input: "hang" }).pipe(Effect.forkChild);
+      yield* Deferred.await(inFlight).pipe(Effect.timeout("1 second"));
+      yield* adapter.interruptTurn(threadId);
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(sent);
+      const aborted = Option.getOrUndefined(
+        yield* Stream.runHead(
+          Stream.filter(adapter.streamEvents, (event) => event.type === "turn.aborted"),
+        ),
+      );
+      assert.equal(aborted?.type, "turn.aborted");
+      const sessions = yield* adapter.listSessions();
+      assert.equal(sessions[0]?.status, "ready");
+      McpProviderSession.clearMcpProviderSession(threadId);
+    }),
+  );
+
+  it.effect("reports a model that rejects function tools as a limitation", () =>
+    Effect.gen(function* () {
+      const threadId = thread("azure-mcp-tool-rejection");
+      McpProviderSession.setMcpProviderSession({
+        environmentId: "environment" as never,
+        threadId,
+        providerSessionId: "provider-session",
+        providerInstanceId: ProviderInstanceId.make("test-openai-compatible"),
+        endpoint: "http://127.0.0.1/mcp",
+        authorizationHeader: "Bearer test",
+      });
+      const adapter = yield* makeAdapter(
+        clientFor(() => response("model does not support tools", 400)),
+        {
+          mcpClientFactory: async () => ({
+            listTools: async () => [
+              { name: "azure-search__search", inputSchema: { type: "object" } },
+            ],
+            callTool: async () => ({ content: [] }),
+          }),
+        },
+      );
+      yield* adapter.startSession(startInput("azure-mcp-tool-rejection"));
+      yield* adapter.sendTurn({ threadId, input: "search" });
+      const completed = Option.getOrUndefined(
+        yield* Stream.runHead(
+          Stream.filter(adapter.streamEvents, (event) => event.type === "turn.completed"),
+        ),
+      );
+      assert.equal(completed?.type, "turn.completed");
+      if (completed?.type === "turn.completed") {
+        assert.equal(completed.payload.state, "failed");
+        assert.include(
+          completed.payload.errorMessage ?? "",
+          "rejected OpenAI-compatible function tools",
+        );
+      }
+      McpProviderSession.clearMcpProviderSession(threadId);
+    }),
+  );
+
+  it.effect("runs the Azure MCP tool loop for every direct provider", () =>
+    Effect.gen(function* () {
+      const kinds = [
+        ProviderDriverKind.make("nvidiaNim"),
+        ProviderDriverKind.make("openrouter"),
+        ProviderDriverKind.make("opencodeZen"),
+      ] as const;
+      for (const kind of kinds) {
+        const threadId = thread(`azure-mcp-${String(kind)}`);
+        const calls: Array<{ name: string; arguments: Record<string, unknown> }> = [];
+        const bodies: string[] = [];
+        McpProviderSession.setMcpProviderSession({
+          environmentId: "environment" as never,
+          threadId,
+          providerSessionId: "provider-session",
+          providerInstanceId: ProviderInstanceId.make(String(kind)),
+          endpoint: "http://127.0.0.1/mcp",
+          authorizationHeader: "Bearer test",
+        });
+        const adapter = yield* makeAdapter(
+          clientFor(
+            () =>
+              bodies.length === 1
+                ? sse([
+                    sseData({
+                      choices: [
+                        {
+                          delta: {
+                            tool_calls: [
+                              {
+                                index: 0,
+                                id: "call-search",
+                                type: "function",
+                                function: {
+                                  name: "azure-search__search",
+                                  arguments: '{"q":"Nvidia"}',
+                                },
+                              },
+                            ],
+                          },
+                          finish_reason: "tool_calls",
+                        },
+                      ],
+                    }),
+                    "data: [DONE]\n\n",
+                  ])
+                : sse([
+                    sseData({
+                      choices: [{ delta: { content: "Found it" }, finish_reason: "stop" }],
+                    }),
+                    "data: [DONE]\n\n",
+                  ]),
+            bodies,
+          ),
+          {
+            provider: kind,
+            mcpClientFactory: async () => ({
+              listTools: async () => [
+                {
+                  name: "azure-search__search",
+                  inputSchema: { type: "object" },
+                  annotations: { readOnlyHint: true, destructiveHint: false },
+                },
+              ],
+              callTool: async (input) => {
+                calls.push(input);
+                return { content: [{ type: "text", text: "result" }] };
+              },
+            }),
+          },
+        );
+        yield* adapter.startSession({
+          ...startInput(`azure-mcp-${String(kind)}`),
+          provider: kind,
+          modelSelection: {
+            instanceId: ProviderInstanceId.make(String(kind)),
+            model:
+              kind === ProviderDriverKind.make("nvidiaNim")
+                ? "stepfun-ai/step-3.7-flash"
+                : "test-model",
+          },
+        });
+        yield* adapter.sendTurn({ threadId, input: "Find Nvidia" });
+        yield* Stream.runHead(
+          Stream.filter(adapter.streamEvents, (event) => event.type === "turn.completed"),
+        );
+        assert.deepStrictEqual(calls, [
+          { name: "azure-search__search", arguments: { q: "Nvidia" } },
+        ]);
+        assert.equal(bodies.length, 2);
+        assert.include(bodies[1]!, '"tool_call_id":"call-search"');
+        McpProviderSession.clearMcpProviderSession(threadId);
+      }
     }),
   );
 });

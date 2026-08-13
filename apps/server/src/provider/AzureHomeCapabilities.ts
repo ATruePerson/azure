@@ -2,12 +2,14 @@
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import { spawn } from "node:child_process";
 
 import type {
   AzureCapabilityKind,
   CapabilityControl,
   CodexCapabilities,
   CodexCapabilityItem,
+  ServerProviderSkill,
 } from "@t3tools/contracts";
 import { parse as parseYaml } from "yaml";
 
@@ -17,10 +19,77 @@ const SAFE_ENTRY_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const IMAGE_EXTENSIONS = new Set([".avif", ".gif", ".jpeg", ".jpg", ".png", ".svg", ".webp"]);
 const CAPABILITY_STATE_FILE = "capabilities-state.json";
 const SKILL_STATE_FILE = "skills-state.json";
+const defaultAzureHome = () =>
+  process.env.AZURE_HOME?.trim() || NodePath.join(NodeOS.homedir(), ".azure");
+const DEFAULT_TRUSTED_ROOTS = [
+  NodePath.join(NodeOS.homedir(), ".codex"),
+  NodePath.join(NodeOS.homedir(), ".config", "azure"),
+  NodePath.join(NodeOS.homedir(), "Developer", "AI"),
+] as const;
+const SKILL_TOKEN = /\$([A-Za-z0-9][A-Za-z0-9._-]{0,127})/gu;
+const MAX_HOOK_OUTPUT_BYTES = 64 * 1024;
+const MAX_HOOK_TIMEOUT_MS = 30_000;
 
 type RegistryKind = "hooks" | "plugins" | "skills" | "mcpServers";
 type IconCategory = "hooks" | "plugins" | "skills" | "mcp";
 type DisabledCapabilities = Record<AzureCapabilityKind, Set<string>>;
+
+interface PluginManifest {
+  readonly path: string;
+  readonly contents: Record<string, unknown>;
+}
+
+export interface AzurePortableSkill {
+  readonly id: string;
+  readonly name: string;
+  readonly path: string;
+  readonly root: string;
+  readonly contents: string;
+  readonly enabled: boolean;
+  readonly source: "azure" | "plugin";
+  readonly description?: string;
+}
+
+export interface AzureMcpServerDescriptor {
+  readonly id: string;
+  readonly name: string;
+  readonly toolPrefix: string;
+  readonly transport: "stdio" | "http";
+  readonly command?: string;
+  readonly args?: ReadonlyArray<string>;
+  readonly env?: Readonly<Record<string, string>>;
+  readonly url?: string;
+  readonly headers?: Readonly<Record<string, string>>;
+}
+
+export type AzurePortableHookEvent = "SessionStart" | "UserPromptSubmit";
+
+export interface AzurePortableHook {
+  readonly id: string;
+  readonly name: string;
+  readonly event: AzurePortableHookEvent;
+  readonly matcher?: string;
+  readonly command: string;
+  readonly timeoutMs: number;
+  readonly pluginRoot: string;
+}
+
+export interface AzurePortableHookResult {
+  readonly hook: AzurePortableHook;
+  readonly outcome: "success" | "error" | "cancelled";
+  readonly output?: string;
+  readonly stdout?: string;
+  readonly stderr?: string;
+  readonly exitCode?: number;
+  readonly additionalContext?: string;
+}
+
+export class AzureSkillResolutionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AzureSkillResolutionError";
+  }
+}
 
 function item(
   id: string,
@@ -57,6 +126,140 @@ function readMcpServers(value: unknown): Record<string, unknown> {
   return servers && typeof servers === "object" && !Array.isArray(servers)
     ? (servers as Record<string, unknown>)
     : {};
+}
+
+function stringRecord(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value).flatMap(([key, entry]) =>
+    typeof entry === "string" && key.trim() ? [[key, entry] as const] : [],
+  );
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string" && entry.length > 0)
+    : [];
+}
+
+async function readPluginManifest(
+  directory: string,
+  trustedRoots: ReadonlyArray<string>,
+  key?: "hooks" | "skills",
+): Promise<PluginManifest | undefined> {
+  let fallback: PluginManifest | undefined;
+  for (const path of [
+    NodePath.join(directory, "plugin.json"),
+    NodePath.join(directory, ".azure-plugin", "plugin.json"),
+    NodePath.join(directory, ".codex-plugin", "plugin.json"),
+    NodePath.join(directory, ".claude-plugin", "plugin.json"),
+  ]) {
+    if (!(await isBoundedTrustedRegularFile(path, trustedRoots))) continue;
+    try {
+      const contents = JSON.parse(await NodeFSP.readFile(path, "utf8")) as unknown;
+      if (contents && typeof contents === "object" && !Array.isArray(contents)) {
+        const manifest = { path, contents: contents as Record<string, unknown> };
+        if (!fallback) fallback = manifest;
+        if (!key || key in manifest.contents) return manifest;
+      }
+    } catch {
+      // Continue to another supported manifest location.
+    }
+  }
+  return fallback;
+}
+
+function manifestPath(
+  manifest: PluginManifest,
+  value: unknown,
+  pluginRoot: string,
+): string | undefined {
+  if (typeof value !== "string" || !value.trim() || NodePath.isAbsolute(value)) return undefined;
+  for (const base of [pluginRoot, NodePath.dirname(manifest.path)]) {
+    const candidate = NodePath.resolve(base, value);
+    if (isWithinRoot(candidate, pluginRoot)) return candidate;
+  }
+  return undefined;
+}
+
+function manifestPaths(
+  manifest: PluginManifest,
+  value: unknown,
+  pluginRoot: string,
+): ReadonlyArray<string> {
+  const values = Array.isArray(value) ? value : [value];
+  return values.flatMap((entry) => {
+    const path = manifestPath(manifest, entry, pluginRoot);
+    return path ? [path] : [];
+  });
+}
+
+function skillFrontmatter(contents: string): {
+  readonly name?: string;
+  readonly description?: string;
+} {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u.exec(contents);
+  if (!match) return {};
+  try {
+    const parsed = parseYaml(match[1] ?? "") as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const record = parsed as Record<string, unknown>;
+    const name = typeof record.name === "string" ? record.name.trim() : "";
+    const description = typeof record.description === "string" ? record.description.trim() : "";
+    return {
+      ...(name ? { name } : {}),
+      ...(description ? { description } : {}),
+    };
+  } catch {
+    return {};
+  }
+}
+
+function normalizedMcpDescriptor(
+  id: string,
+  name: string,
+  value: unknown,
+): AzureMcpServerDescriptor | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const source = value as Record<string, unknown>;
+  const safeName = name.replace(/[^A-Za-z0-9._-]/gu, "_");
+  const url = typeof source.url === "string" ? source.url.trim() : "";
+  if (url && source.type !== "stdio" && source.type !== "local") {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return undefined;
+      return {
+        id,
+        name,
+        toolPrefix: safeName,
+        transport: "http",
+        url: parsed.toString(),
+        ...(() => {
+          const headers = stringRecord(source.headers);
+          return headers ? { headers } : {};
+        })(),
+      };
+    } catch {
+      return undefined;
+    }
+  }
+  const command = Array.isArray(source.command)
+    ? stringArray(source.command)
+    : typeof source.command === "string" && source.command.trim()
+      ? [source.command.trim()]
+      : [];
+  if (command.length === 0) return undefined;
+  const args = [...command.slice(1), ...stringArray(source.args)];
+  const env = stringRecord(source.env) ?? stringRecord(source.environment);
+  return {
+    id,
+    name,
+    toolPrefix: safeName,
+    transport: "stdio",
+    command: command[0]!,
+    ...(args.length > 0 ? { args } : {}),
+    ...(env ? { env } : {}),
+  };
 }
 
 function normalizeOpenCodeMcpServer(value: unknown): Record<string, unknown> | null {
@@ -200,6 +403,7 @@ async function iconPathFromPlugin(
     NodePath.join(directory, "plugin.json"),
     NodePath.join(directory, ".azure-plugin", "plugin.json"),
     NodePath.join(directory, ".codex-plugin", "plugin.json"),
+    NodePath.join(directory, ".claude-plugin", "plugin.json"),
   ]) {
     if (!(await isBoundedTrustedRegularFile(manifest, trustedRoots))) continue;
     try {
@@ -294,7 +498,7 @@ export async function resolveAzureHomeCapabilityIcon(input: {
   readonly azureHome?: string;
   readonly trustedRoots?: ReadonlyArray<string>;
 }): Promise<string | null> {
-  const azureHome = input.azureHome ?? NodePath.join(NodeOS.homedir(), ".azure");
+  const azureHome = input.azureHome ?? defaultAzureHome();
   const roots = input.trustedRoots ?? [
     NodePath.join(NodeOS.homedir(), ".codex"),
     NodePath.join(NodeOS.homedir(), ".config", "azure"),
@@ -342,8 +546,10 @@ async function discoverDirectory(
             kind === "skills"
               ? [NodePath.join(path, "SKILL.md")]
               : [
+                  NodePath.join(path, "plugin.json"),
                   NodePath.join(path, ".azure-plugin/plugin.json"),
                   NodePath.join(path, ".codex-plugin/plugin.json"),
+                  NodePath.join(path, ".claude-plugin/plugin.json"),
                 ];
           const available = (
             await Promise.all(
@@ -412,7 +618,7 @@ async function discoverDirectory(
 }
 
 export async function discoverAzureHomeCapabilities(
-  azureHome = NodePath.join(NodeOS.homedir(), ".azure"),
+  azureHome = defaultAzureHome(),
   trustedRoots: ReadonlyArray<string> = [
     NodePath.join(NodeOS.homedir(), ".codex"),
     NodePath.join(NodeOS.homedir(), ".config", "azure"),
@@ -461,7 +667,7 @@ export async function setAzureHomeCapabilityEnabled(
   kind: AzureCapabilityKind,
   id: string,
   enabled: boolean,
-  azureHome = NodePath.join(NodeOS.homedir(), ".azure"),
+  azureHome = defaultAzureHome(),
 ): Promise<CodexCapabilities> {
   if (!SAFE_ENTRY_NAME.test(id)) {
     throw new Error("Invalid Azure capability id.");
@@ -496,13 +702,13 @@ export async function setAzureHomeCapabilityEnabled(
 export async function setAzureHomeSkillEnabled(
   skillId: string,
   enabled: boolean,
-  azureHome = NodePath.join(NodeOS.homedir(), ".azure"),
+  azureHome = defaultAzureHome(),
 ): Promise<CodexCapabilities> {
   return setAzureHomeCapabilityEnabled("skills", skillId, enabled, azureHome);
 }
 
 export async function discoverEnabledAzureSkillPaths(
-  azureHome = NodePath.join(NodeOS.homedir(), ".azure"),
+  azureHome = defaultAzureHome(),
 ): Promise<ReadonlyArray<string>> {
   const capabilities = await discoverAzureHomeCapabilities(azureHome);
   return capabilities.skills
@@ -510,15 +716,488 @@ export async function discoverEnabledAzureSkillPaths(
     .map((skill) => NodePath.join(azureHome, "skills", skill.id));
 }
 
+/**
+ * Resolve the enabled Azure skills once, with the same bounded/trusted-file
+ * checks used by the capability registry. Provider snapshots only need the
+ * metadata; turn routing uses the retained SKILL.md contents below.
+ */
+export async function discoverEnabledAzureSkills(
+  azureHome = defaultAzureHome(),
+  trustedRoots: ReadonlyArray<string> = DEFAULT_TRUSTED_ROOTS,
+): Promise<ReadonlyArray<AzurePortableSkill>> {
+  const capabilities = await discoverAzureHomeCapabilities(azureHome, trustedRoots);
+  const resolvedRoots = await Promise.all(
+    trustedRoots.map((root) => NodeFSP.realpath(root).catch(() => root)),
+  );
+  const skills: AzurePortableSkill[] = [];
+
+  for (const entry of capabilities.skills) {
+    if (entry.detail !== "Available" || !entry.enabled) continue;
+    const root = await capabilityDirectory(azureHome, "skills", entry.id, resolvedRoots);
+    if (!root) continue;
+    const path = NodePath.join(root, "SKILL.md");
+    if (!(await isBoundedTrustedRegularFile(path, resolvedRoots))) continue;
+    try {
+      const contents = await NodeFSP.readFile(path, "utf8");
+      if (Buffer.byteLength(contents, "utf8") > MAX_ENTRY_BYTES) continue;
+      const metadata = skillFrontmatter(contents);
+      skills.push({
+        id: entry.id,
+        name: metadata.name ?? entry.id,
+        path,
+        root,
+        contents,
+        enabled: true,
+        source: "azure",
+        ...(metadata.description ? { description: metadata.description } : {}),
+      });
+    } catch {
+      // A capability can disappear between discovery and read. Ignore it.
+    }
+  }
+
+  for (const plugin of capabilities.plugins) {
+    if (plugin.detail !== "Available" || !plugin.enabled) continue;
+    const pluginRoot = await capabilityDirectory(azureHome, "plugins", plugin.id, resolvedRoots);
+    if (!pluginRoot) continue;
+    const manifest = await readPluginManifest(pluginRoot, resolvedRoots, "skills");
+    const skillRoots = new Set<string>([
+      NodePath.join(pluginRoot, "skills"),
+      ...(manifest ? manifestPaths(manifest, manifest.contents.skills, pluginRoot) : []),
+    ]);
+    for (const skillsRoot of skillRoots) {
+      let entries: ReadonlyArray<import("node:fs").Dirent>;
+      try {
+        entries = await NodeFSP.readdir(skillsRoot, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const entry of entries.toSorted((left, right) => left.name.localeCompare(right.name))) {
+        if (!SAFE_ENTRY_NAME.test(entry.name)) continue;
+        const root = NodePath.join(skillsRoot, entry.name);
+        const metadata = await metadataForTrustedPath(root, resolvedRoots);
+        const path = NodePath.join(root, "SKILL.md");
+        if (!metadata?.isDirectory() || !(await isBoundedTrustedRegularFile(path, resolvedRoots))) {
+          continue;
+        }
+        try {
+          const contents = await NodeFSP.readFile(path, "utf8");
+          if (Buffer.byteLength(contents, "utf8") > MAX_ENTRY_BYTES) continue;
+          const frontmatter = skillFrontmatter(contents);
+          skills.push({
+            id: `${plugin.id}:${entry.name}`,
+            name: frontmatter.name ?? entry.name,
+            path,
+            root,
+            contents,
+            enabled: true,
+            source: "plugin",
+            ...(frontmatter.description ? { description: frontmatter.description } : {}),
+          });
+        } catch {
+          // Ignore a plugin skill that cannot be read safely.
+        }
+      }
+    }
+  }
+  return skills.toSorted((left, right) => left.name.localeCompare(right.name));
+}
+
+export async function discoverEnabledAzureProviderSkills(
+  azureHome = defaultAzureHome(),
+): Promise<ReadonlyArray<ServerProviderSkill>> {
+  return (await discoverEnabledAzureSkills(azureHome)).map((skill) => ({
+    name: skill.name,
+    path: skill.path,
+    scope: "azure",
+    enabled: true,
+    ...(skill.description
+      ? { description: skill.description, shortDescription: skill.description }
+      : {}),
+  }));
+}
+
+async function discoverKnownAzureSkillNames(
+  azureHome: string,
+  trustedRoots: ReadonlyArray<string> = DEFAULT_TRUSTED_ROOTS,
+): Promise<ReadonlySet<string>> {
+  const capabilities = await discoverAzureHomeCapabilities(azureHome, trustedRoots);
+  const resolvedRoots = await Promise.all(
+    trustedRoots.map((root) => NodeFSP.realpath(root).catch(() => root)),
+  );
+  const names = new Set<string>();
+  for (const skill of capabilities.skills) {
+    if (skill.detail !== "Available") continue;
+    const root = await capabilityDirectory(azureHome, "skills", skill.id, resolvedRoots);
+    if (!root) continue;
+    const path = NodePath.join(root, "SKILL.md");
+    if (!(await isBoundedTrustedRegularFile(path, resolvedRoots))) continue;
+    try {
+      names.add(skillFrontmatter(await NodeFSP.readFile(path, "utf8")).name ?? skill.id);
+    } catch {
+      // A capability can disappear between discovery and read.
+    }
+  }
+  for (const plugin of capabilities.plugins) {
+    if (plugin.detail !== "Available") continue;
+    const pluginRoot = await capabilityDirectory(azureHome, "plugins", plugin.id, resolvedRoots);
+    if (!pluginRoot) continue;
+    const manifest = await readPluginManifest(pluginRoot, resolvedRoots, "skills");
+    const skillRoots = new Set<string>([
+      NodePath.join(pluginRoot, "skills"),
+      ...(manifest ? manifestPaths(manifest, manifest.contents.skills, pluginRoot) : []),
+    ]);
+    for (const skillsRoot of skillRoots) {
+      try {
+        const entries = await NodeFSP.readdir(skillsRoot, { withFileTypes: true });
+        for (const entry of entries) {
+          if (!SAFE_ENTRY_NAME.test(entry.name)) continue;
+          const path = NodePath.join(skillsRoot, entry.name, "SKILL.md");
+          if (!(await isBoundedTrustedRegularFile(path, resolvedRoots))) continue;
+          names.add(skillFrontmatter(await NodeFSP.readFile(path, "utf8")).name ?? entry.name);
+        }
+      } catch {
+        // A malformed plugin must not block other skills.
+      }
+    }
+  }
+  return names;
+}
+
+/** Project skills win over Azure; Azure wins over provider-home skills. */
+export function mergeAzureProviderSkills(
+  providerSkills: ReadonlyArray<ServerProviderSkill>,
+  azureSkills: ReadonlyArray<ServerProviderSkill>,
+): ReadonlyArray<ServerProviderSkill> {
+  const skills = new Map<string, ServerProviderSkill>();
+  for (const skill of providerSkills) {
+    if (skill.scope !== "project") skills.set(skill.name, skill);
+  }
+  for (const skill of azureSkills) skills.set(skill.name, skill);
+  for (const skill of providerSkills) {
+    if (skill.scope === "project") skills.set(skill.name, skill);
+  }
+  return [...skills.values()].toSorted((left, right) => left.name.localeCompare(right.name));
+}
+
+function hookAdditionalContext(value: unknown): string | undefined {
+  if (typeof value === "string") return value.trim() || undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const direct =
+    typeof record.additionalContext === "string" ? record.additionalContext : undefined;
+  if (direct?.trim()) return direct.trim();
+  const nested = record.hookSpecificOutput;
+  return nested && typeof nested === "object" && !Array.isArray(nested)
+    ? hookAdditionalContext(nested)
+    : undefined;
+}
+
+function matchingHook(matcher: string | undefined, trigger: string): boolean {
+  if (!matcher?.trim()) return true;
+  try {
+    return new RegExp(matcher, "u").test(trigger);
+  } catch {
+    return false;
+  }
+}
+
+async function appendPortableHooks(input: {
+  readonly hooks: AzurePortableHook[];
+  readonly source: string;
+  readonly pluginId: string;
+  readonly pluginRoot: string;
+  readonly trustedRoots: ReadonlyArray<string>;
+}): Promise<void> {
+  if (!(await isBoundedTrustedRegularFile(input.source, input.trustedRoots))) return;
+  try {
+    const parsed = JSON.parse(await NodeFSP.readFile(input.source, "utf8")) as unknown;
+    const events =
+      parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>).hooks
+        : undefined;
+    if (!events || typeof events !== "object" || Array.isArray(events)) return;
+    for (const event of ["SessionStart", "UserPromptSubmit"] as const) {
+      const entries = (events as Record<string, unknown>)[event];
+      if (!Array.isArray(entries)) continue;
+      for (const entry of entries) {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+        const record = entry as Record<string, unknown>;
+        const matcher = typeof record.matcher === "string" ? record.matcher : undefined;
+        const definitions = Array.isArray(record.hooks) ? record.hooks : [];
+        for (const definition of definitions) {
+          if (!definition || typeof definition !== "object" || Array.isArray(definition)) continue;
+          const command = definition as Record<string, unknown>;
+          if (command.type !== "command" || typeof command.command !== "string") continue;
+          const timeout = typeof command.timeout === "number" ? command.timeout * 1_000 : 5_000;
+          input.hooks.push({
+            id: `${input.pluginId}:${event}:${input.hooks.length + 1}`,
+            name: input.pluginId,
+            event,
+            ...(matcher ? { matcher } : {}),
+            command: command.command,
+            timeoutMs: Math.min(MAX_HOOK_TIMEOUT_MS, Math.max(1, Math.floor(timeout))),
+            pluginRoot: input.pluginRoot,
+          });
+        }
+      }
+    }
+  } catch {
+    // A malformed hook file must not block the turn.
+  }
+}
+
+export async function discoverEnabledAzurePortableHooks(
+  azureHome = defaultAzureHome(),
+  trustedRoots: ReadonlyArray<string> = DEFAULT_TRUSTED_ROOTS,
+): Promise<ReadonlyArray<AzurePortableHook>> {
+  const capabilities = await discoverAzureHomeCapabilities(azureHome, trustedRoots);
+  const resolvedRoots = await Promise.all(
+    trustedRoots.map((root) => NodeFSP.realpath(root).catch(() => root)),
+  );
+  const hooks: AzurePortableHook[] = [];
+  const loadedSources = new Set<string>();
+  const appendOnce = async (input: {
+    readonly source: string;
+    readonly pluginId: string;
+    readonly pluginRoot: string;
+  }) => {
+    const identity = await NodeFSP.realpath(input.source).catch(() => input.source);
+    if (loadedSources.has(identity)) return;
+    loadedSources.add(identity);
+    await appendPortableHooks({ hooks, trustedRoots: resolvedRoots, ...input });
+  };
+  for (const item of capabilities.hooks) {
+    if (item.detail !== "Available" || !item.enabled) continue;
+    const source = NodePath.join(azureHome, "hooks", `${item.id}.json`);
+    const pluginRoot =
+      (await capabilityDirectory(azureHome, "plugins", item.id, resolvedRoots)) ?? azureHome;
+    await appendOnce({ source, pluginId: item.id, pluginRoot });
+  }
+  for (const plugin of capabilities.plugins) {
+    if (plugin.detail !== "Available" || !plugin.enabled) continue;
+    const pluginRoot = await capabilityDirectory(azureHome, "plugins", plugin.id, resolvedRoots);
+    if (!pluginRoot) continue;
+    const manifest = await readPluginManifest(pluginRoot, resolvedRoots, "hooks");
+    const source = manifest
+      ? manifestPath(manifest, manifest.contents.hooks, pluginRoot)
+      : undefined;
+    if (!source) continue;
+    await appendOnce({ source, pluginId: plugin.id, pluginRoot });
+  }
+  return hooks;
+}
+
+export async function runAzurePortableHooks(input: {
+  readonly event: AzurePortableHookEvent;
+  readonly trigger: string;
+  readonly cwd?: string;
+  readonly prompt?: string;
+  readonly azureHome?: string;
+}): Promise<ReadonlyArray<AzurePortableHookResult>> {
+  const azureHome = input.azureHome ?? defaultAzureHome();
+  const hooks = await discoverEnabledAzurePortableHooks(azureHome);
+  const dataRoot = NodePath.join(azureHome, "plugin-data");
+  await NodeFSP.mkdir(dataRoot, { recursive: true, mode: 0o700 }).catch(() => undefined);
+  return Promise.all(
+    hooks
+      .filter((hook) => hook.event === input.event && matchingHook(hook.matcher, input.trigger))
+      .map(
+        (hook) =>
+          new Promise<AzurePortableHookResult>((resolve) => {
+            const command = hook.command.replaceAll("${CLAUDE_PLUGIN_ROOT}", hook.pluginRoot);
+            const child = spawn(command, {
+              cwd: input.cwd,
+              shell: true,
+              env: {
+                PATH: process.env.PATH ?? "",
+                HOME: process.env.HOME ?? "",
+                TMPDIR: process.env.TMPDIR ?? "",
+                CLAUDE_PLUGIN_ROOT: hook.pluginRoot,
+                PLUGIN_DATA: dataRoot,
+              },
+              stdio: ["pipe", "pipe", "pipe"],
+            });
+            let stdout = "";
+            let stderr = "";
+            let settled = false;
+            const append = (current: string, chunk: Buffer) => {
+              const next = `${current}${chunk.toString("utf8")}`;
+              return Buffer.byteLength(next, "utf8") > MAX_HOOK_OUTPUT_BYTES
+                ? Buffer.from(next, "utf8").subarray(0, MAX_HOOK_OUTPUT_BYTES).toString("utf8")
+                : next;
+            };
+            const finish = (result: AzurePortableHookResult) => {
+              if (settled) return;
+              settled = true;
+              clearTimeout(timeout);
+              resolve(result);
+            };
+            // @effect-diagnostics-next-line globalTimers:off -- child-process deadline.
+            const timeout = setTimeout(() => {
+              child.kill("SIGTERM");
+              finish({ hook, outcome: "cancelled", stderr: "Timed out while running hook." });
+            }, hook.timeoutMs);
+            child.stdout.on("data", (chunk: Buffer) => {
+              stdout = append(stdout, chunk);
+            });
+            child.stderr.on("data", (chunk: Buffer) => {
+              stderr = append(stderr, chunk);
+            });
+            child.on("error", () =>
+              finish({ hook, outcome: "error", stderr: "Hook failed to start." }),
+            );
+            child.on("close", (exitCode) => {
+              const output = stdout.trim();
+              let additionalContext: string | undefined;
+              let malformedOutput = false;
+              const looksLikeJson = output.startsWith("{") || output.startsWith("[");
+              if (looksLikeJson) {
+                try {
+                  additionalContext = hookAdditionalContext(JSON.parse(output));
+                } catch {
+                  malformedOutput = true;
+                }
+              } else {
+                additionalContext = output || undefined;
+              }
+              finish({
+                hook,
+                outcome: exitCode === 0 && !malformedOutput ? "success" : "error",
+                ...(output ? { stdout: output, output } : {}),
+                ...(malformedOutput
+                  ? {
+                      stderr: [stderr.trim(), "Hook returned malformed JSON output."]
+                        .filter(Boolean)
+                        .join(" "),
+                    }
+                  : stderr.trim()
+                    ? { stderr: stderr.trim() }
+                    : {}),
+                ...(exitCode === null ? {} : { exitCode }),
+                ...(exitCode === 0 && !malformedOutput && additionalContext
+                  ? { additionalContext }
+                  : {}),
+              });
+            });
+            child.stdin.end(
+              JSON.stringify({
+                hook_event_name: input.event,
+                prompt: input.prompt ?? "",
+                cwd: input.cwd,
+                session_id: "azure",
+              }),
+            );
+          }),
+      ),
+  );
+}
+
+/** Explicit `$skill` is portable; unknown dollar tokens deliberately stay text. */
+export async function resolveAzureExplicitSkills(input: {
+  readonly prompt: string | undefined;
+  readonly azureHome?: string;
+}): Promise<{
+  readonly prompt: string | undefined;
+  readonly selected: ReadonlyArray<AzurePortableSkill>;
+}> {
+  if (!input.prompt || !input.prompt.includes("$")) return { prompt: input.prompt, selected: [] };
+  const azureHome = input.azureHome ?? defaultAzureHome();
+  const [capabilities, skills, knownSkills] = await Promise.all([
+    discoverAzureHomeCapabilities(azureHome),
+    discoverEnabledAzureSkills(azureHome),
+    discoverKnownAzureSkillNames(azureHome),
+  ]);
+  const selectedByName = new Map(skills.map((skill) => [skill.name, skill] as const));
+  const disabled = new Set(
+    capabilities.skills
+      .filter((skill) => skill.detail === "Available" && !skill.enabled)
+      .map((skill) => skill.id),
+  );
+  const selected: AzurePortableSkill[] = [];
+  const seen = new Set<string>();
+  const prompt = input.prompt.replace(SKILL_TOKEN, (token, name: string) => {
+    const skill = selectedByName.get(name);
+    if (skill) {
+      if (!seen.has(skill.name)) {
+        seen.add(skill.name);
+        selected.push(skill);
+      }
+      return "";
+    }
+    if (disabled.has(name) || knownSkills.has(name)) {
+      throw new AzureSkillResolutionError(
+        `Azure skill '$${name}' is disabled. Enable it in Settings > Skills and start a new Azure session.`,
+      );
+    }
+    return token;
+  });
+  const injected: string[] = [];
+  let bytes = 0;
+  for (const skill of selected) {
+    const block = `<azure_skill name="${skill.name}" root="${skill.root}">\n${skill.contents}\n</azure_skill>`;
+    const blockBytes = Buffer.byteLength(block, "utf8");
+    if (bytes + blockBytes > MAX_ENTRY_BYTES) {
+      throw new AzureSkillResolutionError(
+        "Selected Azure skills exceed the 64 KiB instruction limit.",
+      );
+    }
+    bytes += blockBytes;
+    injected.push(block);
+  }
+  return {
+    prompt: injected.length > 0 ? `${injected.join("\n\n")}\n\n${prompt.trimStart()}` : prompt,
+    selected,
+  };
+}
+
+export async function discoverEnabledAzureMcpServers(
+  azureHome = defaultAzureHome(),
+): Promise<ReadonlyArray<AzureMcpServerDescriptor>> {
+  const capabilities = await discoverAzureHomeCapabilities(azureHome);
+  const trustedRoots = await Promise.all(
+    DEFAULT_TRUSTED_ROOTS.map((root) => NodeFSP.realpath(root).catch(() => root)),
+  );
+  const enabled = new Set(
+    capabilities.mcpServers
+      .filter((server) => server.detail === "Available" && server.enabled)
+      .map((server) => server.id),
+  );
+  if (enabled.size === 0) return [];
+  let files: ReadonlyArray<import("node:fs").Dirent>;
+  try {
+    files = await NodeFSP.readdir(NodePath.join(azureHome, "mcp"), { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const descriptors: AzureMcpServerDescriptor[] = [];
+  for (const file of files.toSorted((left, right) => left.name.localeCompare(right.name))) {
+    if (!file.name.endsWith(".json") || !SAFE_ENTRY_NAME.test(file.name.slice(0, -5))) continue;
+    const fileId = file.name.slice(0, -5);
+    const path = NodePath.join(azureHome, "mcp", file.name);
+    if (!(await isBoundedTrustedRegularFile(path, trustedRoots))) continue;
+    try {
+      const source = readMcpServers(JSON.parse(await NodeFSP.readFile(path, "utf8")));
+      for (const [name, value] of Object.entries(source)) {
+        const id = mcpCapabilityId(fileId, name);
+        if (!enabled.has(id)) continue;
+        const descriptor = normalizedMcpDescriptor(id, name, value);
+        if (descriptor) descriptors.push(descriptor);
+      }
+    } catch {
+      // A malformed MCP entry is already represented as unavailable in Settings.
+    }
+  }
+  return descriptors;
+}
+
 /** Build the small OpenCode config projection owned by Azure capabilities. */
 export async function discoverEnabledAzureOpenCodeConfig(
-  azureHome = NodePath.join(NodeOS.homedir(), ".azure"),
+  azureHome = defaultAzureHome(),
 ): Promise<Record<string, unknown>> {
   const capabilities = await discoverAzureHomeCapabilities(azureHome);
   const config: Record<string, unknown> = {};
-  const skills = capabilities.skills
-    .filter((skill) => skill.detail === "Available" && skill.enabled)
-    .map((skill) => NodePath.join(azureHome, "skills", skill.id));
+  const skills = (await discoverEnabledAzureSkills(azureHome)).map((skill) => skill.root);
   if (skills.length > 0) config.skills = { paths: skills };
 
   const plugins: string[] = [];

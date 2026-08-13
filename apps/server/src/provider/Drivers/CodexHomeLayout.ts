@@ -414,9 +414,12 @@ export const materializeCodexShadowHome = Effect.fn("materializeCodexShadowHome"
   });
 });
 
-export function codexContinuationIdentity(layout: CodexHomeLayout) {
+export function codexContinuationIdentity(
+  layout: CodexHomeLayout,
+  driverKind: ProviderDriverKind = ProviderDriverKind.make("codex"),
+) {
   return {
-    driverKind: ProviderDriverKind.make("codex"),
-    continuationKey: layout.continuationKey,
+    driverKind,
+    continuationKey: layout.continuationKey.replace(/^codex:/u, `${driverKind}:`),
   };
 }

@@ -64,7 +64,7 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
 
   public readonly startImpl = vi.fn(() =>
     Promise.resolve({
-      provider: ProviderDriverKind.make("codex"),
+      provider: this.options.provider ?? ProviderDriverKind.make("codex"),
       status: "ready" as const,
       runtimeMode: this.options.runtimeMode,
       threadId: this.options.threadId,
@@ -281,11 +281,47 @@ validationLayer("CodexAdapterLive validation", (it) => {
         cwd: process.cwd(),
         launchArgs: "",
         model: "gpt-5.3-codex",
+        provider: ProviderDriverKind.make("codex"),
         providerInstanceId: ProviderInstanceId.make("codex"),
         serviceTier: "priority",
         threadId: asThreadId("thread-1"),
         runtimeMode: "full-access",
       });
+    }),
+  );
+});
+
+const chatGptWebRuntimeFactory = makeRuntimeFactory();
+const chatGptWebLayer = it.layer(
+  Layer.effect(
+    CodexAdapter,
+    makeCodexAdapter(decodeCodexSettings({}), {
+      provider: ProviderDriverKind.make("chatgptWeb"),
+      makeRuntime: chatGptWebRuntimeFactory.factory,
+    }),
+  ).pipe(
+    Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+    Layer.provideMerge(ServerSettingsService.layerTest()),
+    Layer.provideMerge(providerSessionDirectoryTestLayer),
+    Layer.provideMerge(NodeServices.layer),
+  ),
+);
+
+chatGptWebLayer("ChatGPT Web provider identity", (it) => {
+  it.effect("labels the adapter and Codex runtime as chatgptWeb", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      const provider = ProviderDriverKind.make("chatgptWeb");
+
+      NodeAssert.equal(adapter.provider, provider);
+      const session = yield* adapter.startSession({
+        provider,
+        threadId: asThreadId("chatgpt-web-thread"),
+        runtimeMode: "full-access",
+      });
+
+      NodeAssert.equal(session.provider, provider);
+      NodeAssert.equal(chatGptWebRuntimeFactory.lastRuntime?.options.provider, provider);
     }),
   );
 });

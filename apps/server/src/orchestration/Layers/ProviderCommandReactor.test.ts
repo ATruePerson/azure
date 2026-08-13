@@ -1909,6 +1909,67 @@ describe("ProviderCommandReactor", () => {
     expect(harness.stopSession.mock.calls.length).toBe(0);
   });
 
+  it("interrupts an active turn before reconfiguring the provider session", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-active-reconfigure-initial"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-active-reconfigure-initial"),
+          role: "user",
+          text: "first",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    const existing = harness.runtimeSessions[0];
+    if (!existing) throw new Error("Expected an active provider session.");
+    harness.runtimeSessions[0] = {
+      ...existing,
+      status: "running",
+      activeTurnId: TurnId.make("provider-turn-active"),
+    };
+    harness.startSession.mockClear();
+    harness.interruptTurn.mockClear();
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-active-reconfigure"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-active-reconfigure"),
+          role: "user",
+          text: "switch model",
+          attachments: [],
+        },
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5.3-codex",
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    expect(harness.interruptTurn).toHaveBeenCalledWith({
+      threadId: ThreadId.make("thread-1"),
+      turnId: TurnId.make("provider-turn-active"),
+    });
+    expect(harness.startSession.mock.invocationCallOrder[0]).toBeGreaterThan(
+      harness.interruptTurn.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
+  });
+
   it("restarts an existing Codex thread on a compatible requested instance", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";

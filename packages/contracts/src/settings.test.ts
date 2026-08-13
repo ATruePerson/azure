@@ -125,9 +125,22 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
     // Legacy `providers` struct is still hydrated with its per-driver defaults
     // so existing call sites keep working through the migration.
     expect(decoded.providers.codex.enabled).toBe(true);
+    expect(decoded.providers.chatgptWeb.enabled).toBe(true);
     expect(decoded.providers.nvidiaNim.baseUrl).toBe(NVIDIA_NIM_DEFAULT_BASE_URL);
     expect(decoded.providers.openrouter.baseUrl).toBe(OPENROUTER_DEFAULT_BASE_URL);
     expect(decoded.providers.opencodeZen.baseUrl).toBe(OPENCODE_ZEN_DEFAULT_BASE_URL);
+  });
+
+  it("decodes and patches ChatGPT Web Codex settings", () => {
+    const decoded = decodeServerSettings({
+      providers: { chatgptWeb: { homePath: "~/.codex-web" } },
+    });
+    expect(decoded.providers.chatgptWeb.homePath).toBe("~/.codex-web");
+    expect(
+      decodeServerSettingsPatch({
+        providers: { chatgptWeb: { binaryPath: "/usr/local/bin/codex" } },
+      }).providers?.chatgptWeb?.binaryPath,
+    ).toBe("/usr/local/bin/codex");
   });
 
   it("accepts base URL patches for first-party HTTP providers", () => {

@@ -13,6 +13,7 @@ import packageJson from "../../package.json" with { type: "json" };
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
+import { makeAzureMcpGateway, type AzureMcpGateway } from "./AzureMcpGateway.ts";
 import {
   PreviewSnapshotToolkitHandlersLive,
   PreviewStandardToolkitHandlersLive,
@@ -216,6 +217,88 @@ export const PreviewToolkitRegistrationLive = Layer.mergeAll(
   PreviewSnapshotRegistrationLive,
 );
 
+const registerAzureMcpToolsForGateway = Effect.fn("McpHttpServer.registerAzureMcpToolsForGateway")(
+  function* (gateway: AzureMcpGateway) {
+    const server = yield* McpServer.McpServer;
+    yield* Effect.addFinalizer(() => gateway.close);
+    const tools = yield* gateway.listTools();
+    yield* Effect.forEach(
+      tools,
+      (tool) => {
+        const annotations = tool.annotations ?? {};
+        let toolAnnotations = Context.empty();
+        if (annotations.readOnlyHint !== undefined) {
+          toolAnnotations = Context.add(toolAnnotations, Tool.Readonly, annotations.readOnlyHint);
+        }
+        if (annotations.destructiveHint !== undefined) {
+          toolAnnotations = Context.add(
+            toolAnnotations,
+            Tool.Destructive,
+            annotations.destructiveHint,
+          );
+        }
+        if (annotations.idempotentHint !== undefined) {
+          toolAnnotations = Context.add(
+            toolAnnotations,
+            Tool.Idempotent,
+            annotations.idempotentHint,
+          );
+        }
+        if (annotations.openWorldHint !== undefined) {
+          toolAnnotations = Context.add(toolAnnotations, Tool.OpenWorld, annotations.openWorldHint);
+        }
+        return server.addTool({
+          tool: new McpSchema.Tool({
+            name: tool.name,
+            ...(tool.description ? { description: tool.description } : {}),
+            inputSchema: tool.inputSchema,
+            annotations: {
+              ...(annotations.readOnlyHint !== undefined
+                ? { readOnlyHint: annotations.readOnlyHint }
+                : {}),
+              ...(annotations.destructiveHint !== undefined
+                ? { destructiveHint: annotations.destructiveHint }
+                : {}),
+              ...(annotations.idempotentHint !== undefined
+                ? { idempotentHint: annotations.idempotentHint }
+                : {}),
+              ...(annotations.openWorldHint !== undefined
+                ? { openWorldHint: annotations.openWorldHint }
+                : {}),
+            },
+          }),
+          annotations: toolAnnotations,
+          handle: (arguments_: Record<string, unknown>) =>
+            gateway.callTool(tool.name, arguments_).pipe(
+              Effect.map(
+                (result) =>
+                  new McpSchema.CallToolResult({
+                    isError: result.isError === true,
+                    content: Array.isArray(result.content)
+                      ? (result.content as never)
+                      : [{ type: "text", text: JSON.stringify(result) }],
+                    ...(result.structuredContent && typeof result.structuredContent === "object"
+                      ? { structuredContent: result.structuredContent as Record<string, unknown> }
+                      : {}),
+                  }),
+              ),
+            ),
+        });
+      },
+      { discard: true },
+    );
+  },
+);
+
+const registerAzureMcpTools = Effect.fn("McpHttpServer.registerAzureMcpTools")(function* () {
+  yield* registerAzureMcpToolsForGateway(yield* makeAzureMcpGateway());
+});
+
+export const AzureMcpToolkitRegistrationFor = (gateway: AzureMcpGateway) =>
+  Layer.effectDiscard(registerAzureMcpToolsForGateway(gateway));
+
+const AzureMcpToolkitRegistrationLive = Layer.effectDiscard(registerAzureMcpTools());
+
 const McpTransportLive = McpServer.layerHttp({
   name: "T3 Code",
   version: packageJson.version,
@@ -223,4 +306,7 @@ const McpTransportLive = McpServer.layerHttp({
   protocols: [McpProtocol.v2025_06_18],
 }).pipe(Layer.provide(McpAuthMiddlewareLive));
 
-export const layer = PreviewToolkitRegistrationLive.pipe(Layer.provideMerge(McpTransportLive));
+export const layer = Layer.mergeAll(
+  PreviewToolkitRegistrationLive,
+  AzureMcpToolkitRegistrationLive,
+).pipe(Layer.provideMerge(McpTransportLive));

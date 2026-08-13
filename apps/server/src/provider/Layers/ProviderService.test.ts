@@ -3,6 +3,8 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
+process.env.AZURE_HOME = NodePath.join(NodeOS.tmpdir(), "azure-provider-service-test-empty");
+
 import type {
   ProviderApprovalDecision,
   ProviderRuntimeEvent,
@@ -12,6 +14,7 @@ import type {
 } from "@t3tools/contracts";
 import {
   ApprovalRequestId,
+  EnvironmentId,
   EventId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -52,6 +55,7 @@ import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
 import { ProviderSessionDirectoryLive } from "./ProviderSessionDirectory.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as ProviderSessionRuntime from "../../persistence/ProviderSessionRuntime.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import {
   makeSqlitePersistenceLive,
   SqlitePersistenceMemory,
@@ -59,6 +63,7 @@ import {
 import * as ServerSettings from "../../serverSettings.ts";
 import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import { makeAdapterRegistryMock } from "../testUtils/providerAdapterRegistryMock.ts";
+import { runAzurePortableHooks } from "../AzureHomeCapabilities.ts";
 
 const defaultServerSettingsLayer = ServerSettings.ServerSettingsService.layerTest();
 
@@ -89,27 +94,28 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
   const sessions = new Map<ThreadId, ProviderSession>();
   const runtimeEventPubSub = Effect.runSync(PubSub.unbounded<ProviderRuntimeEvent>());
 
-  const startSession = vi.fn((input: ProviderSessionStartInput) =>
-    Effect.sync(() => {
-      const now = "2026-01-01T00:00:00.000Z";
-      const session: ProviderSession = {
-        provider,
-        ...(input.providerInstanceId !== undefined
-          ? { providerInstanceId: input.providerInstanceId }
-          : {}),
-        status: "ready",
-        runtimeMode: input.runtimeMode,
-        threadId: input.threadId,
-        resumeCursor: input.resumeCursor ?? {
-          opaque: `resume-${String(input.threadId)}`,
-        },
-        cwd: input.cwd ?? process.cwd(),
-        createdAt: now,
-        updatedAt: now,
-      };
-      sessions.set(session.threadId, session);
-      return session;
-    }),
+  const startSession = vi.fn(
+    (input: ProviderSessionStartInput): Effect.Effect<ProviderSession, ProviderAdapterError> =>
+      Effect.sync(() => {
+        const now = "2026-01-01T00:00:00.000Z";
+        const session: ProviderSession = {
+          provider,
+          ...(input.providerInstanceId !== undefined
+            ? { providerInstanceId: input.providerInstanceId }
+            : {}),
+          status: "ready",
+          runtimeMode: input.runtimeMode,
+          threadId: input.threadId,
+          resumeCursor: input.resumeCursor ?? {
+            opaque: `resume-${String(input.threadId)}`,
+          },
+          cwd: input.cwd ?? process.cwd(),
+          createdAt: now,
+          updatedAt: now,
+        };
+        sessions.set(session.threadId, session);
+        return session;
+      }),
   );
 
   const sendTurn = vi.fn(
@@ -842,6 +848,52 @@ it.effect(
 );
 
 routing.layer("ProviderServiceLive routing", (it) => {
+  it.effect("keeps an active MCP credential when an existing session start fails", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-preserve-mcp-credential");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      McpProviderSession.setMcpProviderSession({
+        environmentId: EnvironmentId.make("environment-preserve-mcp-credential"),
+        threadId,
+        providerSessionId: "provider-session-preserve-mcp-credential",
+        providerInstanceId: codexInstanceId,
+        endpoint: "http://127.0.0.1/mcp",
+        authorizationHeader: "Bearer retained",
+      });
+      routing.codex.startSession.mockImplementationOnce(() =>
+        Effect.fail(
+          new ProviderAdapterRequestError({
+            provider: String(CODEX_DRIVER),
+            method: "startSession",
+            detail: "active turn must finish before reconfiguration",
+          }),
+        ),
+      );
+
+      yield* Effect.flip(
+        provider.startSession(threadId, {
+          provider: CODEX_DRIVER,
+          providerInstanceId: codexInstanceId,
+          threadId,
+          runtimeMode: "full-access",
+        }),
+      );
+
+      assert.equal(
+        McpProviderSession.readMcpProviderSession(threadId)?.authorizationHeader,
+        "Bearer retained",
+      );
+      McpProviderSession.clearMcpProviderSession(threadId);
+      yield* provider.stopSession({ threadId });
+    }),
+  );
+
   it.effect("keeps a recovered Azure instruction reservation after an older send fails", () =>
     Effect.gen(function* () {
       const cwd = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "azure-project-rules-"));
@@ -2150,6 +2202,152 @@ validation.layer("ProviderServiceLive validation", (it) => {
       assert.equal(Option.isSome(runtime), true);
       if (Option.isSome(runtime)) {
         assert.equal(runtime.value.threadId, session.threadId);
+      }
+    }),
+  );
+});
+
+const portableHooks = makeProviderServiceLayer();
+portableHooks.layer("ProviderService portable hooks", (it) => {
+  const waitForHookEvents = (ref: Ref.Ref<ProviderRuntimeEvent[]>, minCompleted: number) =>
+    Effect.gen(function* () {
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        const completed = (yield* Ref.get(ref)).filter(
+          (event) => event.type === "hook.completed",
+        ).length;
+        if (completed >= minCompleted) return;
+        yield* Effect.yieldNow;
+      }
+    });
+
+  it.effect("runs SessionStart once per session and UserPromptSubmit every turn", () =>
+    Effect.gen(function* () {
+      const azureHome = process.env.AZURE_HOME;
+      const cwd = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "azure-portable-hooks-cwd-"));
+      const hooksDir = NodePath.join(azureHome ?? "", "hooks");
+      NodeFS.mkdirSync(hooksDir, { recursive: true });
+      const hookFile = NodePath.join(hooksDir, "portable.json");
+      NodeFS.writeFileSync(
+        hookFile,
+        JSON.stringify({
+          hooks: {
+            SessionStart: [{ hooks: [{ type: "command", command: "printf 'session-context'" }] }],
+            UserPromptSubmit: [
+              { hooks: [{ type: "command", command: "printf 'prompt-context'" }] },
+            ],
+          },
+        }),
+      );
+      try {
+        const provider = yield* ProviderService.ProviderService;
+        const threadId = asThreadId("thread-portable-hooks");
+        const eventsRef = yield* Ref.make<ProviderRuntimeEvent[]>([]);
+        const consumer = yield* Stream.runForEach(provider.streamEvents, (event) =>
+          Ref.update(eventsRef, (current) => [...current, event]),
+        ).pipe(Effect.forkChild);
+        yield* provider.startSession(threadId, {
+          provider: CODEX_DRIVER,
+          providerInstanceId: codexInstanceId,
+          threadId,
+          cwd,
+          runtimeMode: "full-access",
+        });
+        yield* provider.sendTurn({ threadId, input: "first", attachments: [] });
+        yield* provider.sendTurn({ threadId, input: "second", attachments: [] });
+        yield* waitForHookEvents(eventsRef, 3);
+        yield* Fiber.interrupt(consumer);
+
+        const inputs = portableHooks.codex.sendTurn.mock.calls.map(([input]) => input.input);
+        assert.include(inputs[0] ?? "", "session-context");
+        assert.include(inputs[0] ?? "", "prompt-context");
+        assert.include(inputs[1] ?? "", "prompt-context");
+        assert.notInclude(inputs[1] ?? "", "session-context");
+
+        const hookCompleted = (yield* Ref.get(eventsRef)).filter(
+          (event): event is Extract<ProviderRuntimeEvent, { type: "hook.completed" }> =>
+            event.type === "hook.completed",
+        );
+        const hookStarted = (yield* Ref.get(eventsRef)).filter(
+          (event): event is Extract<ProviderRuntimeEvent, { type: "hook.started" }> =>
+            event.type === "hook.started",
+        );
+        const sessionStarts = hookStarted.filter((event) =>
+          event.payload.hookEvent.includes("SessionStart"),
+        );
+        const promptSubmits = hookStarted.filter((event) =>
+          event.payload.hookEvent.includes("UserPromptSubmit"),
+        );
+        assert.equal(sessionStarts.length, 1);
+        assert.equal(
+          hookCompleted.filter((event) => String(event.payload.hookId).includes("SessionStart"))
+            .length,
+          1,
+        );
+        assert.equal(
+          hookCompleted.filter((event) => String(event.payload.hookId).includes("UserPromptSubmit"))
+            .length,
+          2,
+        );
+        assert.equal(
+          hookCompleted.every((event) => event.payload.outcome === "success"),
+          true,
+        );
+      } finally {
+        NodeFS.rmSync(hookFile, { force: true });
+        NodeFS.rmSync(cwd, { recursive: true, force: true });
+      }
+    }),
+  );
+
+  it.effect("times out a slow portable hook and still completes the turn", () =>
+    Effect.gen(function* () {
+      const azureHome = process.env.AZURE_HOME;
+      const cwd = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "azure-portable-hooks-cwd-"));
+      const hooksDir = NodePath.join(azureHome ?? "", "hooks");
+      NodeFS.mkdirSync(hooksDir, { recursive: true });
+      const hookFile = NodePath.join(hooksDir, "slow.json");
+      NodeFS.writeFileSync(
+        hookFile,
+        JSON.stringify({
+          hooks: {
+            UserPromptSubmit: [
+              {
+                hooks: [{ type: "command", command: "sleep 30", timeout: 0.05 }],
+              },
+            ],
+          },
+        }),
+      );
+      try {
+        portableHooks.codex.sendTurn.mockClear();
+        const provider = yield* ProviderService.ProviderService;
+        const threadId = asThreadId("thread-portable-hook-timeout");
+        const eventsRef = yield* Ref.make<ProviderRuntimeEvent[]>([]);
+        const consumer = yield* Stream.runForEach(provider.streamEvents, (event) =>
+          Ref.update(eventsRef, (current) => [...current, event]),
+        ).pipe(Effect.forkChild);
+        yield* provider.startSession(threadId, {
+          provider: CODEX_DRIVER,
+          providerInstanceId: codexInstanceId,
+          threadId,
+          cwd,
+          runtimeMode: "full-access",
+        });
+        yield* provider.sendTurn({ threadId, input: "slow hook", attachments: [] });
+        yield* waitForHookEvents(eventsRef, 1);
+        yield* Fiber.interrupt(consumer);
+
+        assert.equal(portableHooks.codex.sendTurn.mock.calls.length, 1);
+        const hookEvents = (yield* Ref.get(eventsRef)).filter(
+          (event): event is Extract<ProviderRuntimeEvent, { type: "hook.completed" }> =>
+            event.type === "hook.completed",
+        );
+        assert.equal(hookEvents.length, 1);
+        assert.equal(hookEvents[0]?.payload.outcome, "cancelled");
+        assert.include(hookEvents[0]?.payload.stderr ?? "", "Timed out");
+      } finally {
+        NodeFS.rmSync(hookFile, { force: true });
+        NodeFS.rmSync(cwd, { recursive: true, force: true });
       }
     }),
   );

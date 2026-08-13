@@ -6,8 +6,15 @@ import { afterEach, describe, expect, it } from "vite-plus/test";
 
 import {
   discoverAzureHomeCapabilities,
+  discoverEnabledAzurePortableHooks,
+  discoverEnabledAzureMcpServers,
+  discoverEnabledAzureProviderSkills,
   discoverEnabledAzureSkillPaths,
+  mergeAzureProviderSkills,
   resolveAzureHomeCapabilityIcon,
+  resolveAzureExplicitSkills,
+  runAzurePortableHooks,
+  setAzureHomeCapabilityEnabled,
   setAzureHomeSkillEnabled,
 } from "./AzureHomeCapabilities.ts";
 
@@ -130,6 +137,189 @@ describe("Azure home capability discovery", () => {
     });
     await expect(discoverEnabledAzureSkillPaths(home)).resolves.toEqual([
       NodePath.join(home, "skills", "focused"),
+    ]);
+  });
+
+  it("projects enabled Azure and portable-plugin skills and expands only known skill tokens", async () => {
+    const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "azure-home-"));
+    directories.push(home);
+    await NodeFSP.mkdir(NodePath.join(home, "skills", "focused"), { recursive: true });
+    await NodeFSP.writeFile(
+      NodePath.join(home, "skills", "focused", "SKILL.md"),
+      "---\nname: focused\ndescription: Focus well\n---\nUse focus.",
+    );
+    await NodeFSP.mkdir(NodePath.join(home, "plugins", "portable", ".codex-plugin"), {
+      recursive: true,
+    });
+    await NodeFSP.writeFile(
+      NodePath.join(home, "plugins", "portable", ".codex-plugin", "plugin.json"),
+      JSON.stringify({ skills: "./skills" }),
+    );
+    await NodeFSP.mkdir(NodePath.join(home, "plugins", "portable", "skills", "plugin-skill"), {
+      recursive: true,
+    });
+    await NodeFSP.writeFile(
+      NodePath.join(home, "plugins", "portable", "skills", "plugin-skill", "SKILL.md"),
+      "---\nname: plugin-skill\n---\nPortable instructions.",
+    );
+
+    await expect(discoverEnabledAzureProviderSkills(home)).resolves.toEqual([
+      expect.objectContaining({ name: "focused", scope: "azure" }),
+      expect.objectContaining({ name: "plugin-skill", scope: "azure" }),
+    ]);
+    await expect(
+      resolveAzureExplicitSkills({ prompt: "$focused $unknown work", azureHome: home }),
+    ).resolves.toMatchObject({
+      prompt: expect.stringContaining("$unknown work"),
+      selected: [expect.objectContaining({ name: "focused" })],
+    });
+
+    await setAzureHomeSkillEnabled("focused", false, home);
+    await expect(
+      resolveAzureExplicitSkills({ prompt: "$focused", azureHome: home }),
+    ).rejects.toThrow("is disabled");
+
+    await setAzureHomeCapabilityEnabled("plugins", "portable", false, home);
+    await expect(
+      resolveAzureExplicitSkills({ prompt: "$plugin-skill", azureHome: home }),
+    ).rejects.toThrow("is disabled");
+  });
+
+  it("caps combined explicit skill instructions at 64 KiB", async () => {
+    const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "azure-home-"));
+    directories.push(home);
+    for (const name of ["first", "second"]) {
+      await NodeFSP.mkdir(NodePath.join(home, "skills", name), { recursive: true });
+      await NodeFSP.writeFile(
+        NodePath.join(home, "skills", name, "SKILL.md"),
+        `---\nname: ${name}\n---\n${"x".repeat(40 * 1024)}`,
+      );
+    }
+
+    await expect(
+      resolveAzureExplicitSkills({ prompt: "$first $second", azureHome: home }),
+    ).rejects.toThrow("64 KiB");
+  });
+
+  it("discovers manifest hooks once and runs them without provider credentials", async () => {
+    const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "azure-home-"));
+    directories.push(home);
+    const plugin = NodePath.join(home, "plugins", "portable");
+    await NodeFSP.mkdir(NodePath.join(plugin, ".codex-plugin"), { recursive: true });
+    await NodeFSP.mkdir(NodePath.join(plugin, "hooks"), { recursive: true });
+    await NodeFSP.writeFile(
+      NodePath.join(plugin, ".codex-plugin", "plugin.json"),
+      JSON.stringify({ hooks: "./hooks/portable.json" }),
+    );
+    await NodeFSP.writeFile(
+      NodePath.join(plugin, "hooks", "portable.json"),
+      JSON.stringify({
+        hooks: {
+          SessionStart: [
+            {
+              matcher: "startup",
+              hooks: [
+                {
+                  type: "command",
+                  command: `${JSON.stringify(process.execPath)} -e ${JSON.stringify(
+                    'process.stdout.write(JSON.stringify({hookSpecificOutput:{additionalContext:process.env.AZURE_TEST_PROVIDER_KEY ? "leak" : "safe"}}))',
+                  )}`,
+                },
+              ],
+            },
+          ],
+          UserPromptSubmit: [{ hooks: [{ type: "command", command: "printf ignored" }] }],
+          SubagentStart: [{ hooks: [{ type: "command", command: "printf native-only" }] }],
+        },
+      }),
+    );
+    await NodeFSP.mkdir(NodePath.join(home, "hooks"), { recursive: true });
+    await NodeFSP.symlink(
+      NodePath.join(plugin, "hooks", "portable.json"),
+      NodePath.join(home, "hooks", "portable.json"),
+    );
+    const prior = process.env.AZURE_TEST_PROVIDER_KEY;
+    process.env.AZURE_TEST_PROVIDER_KEY = "not-for-hooks";
+    try {
+      await expect(discoverEnabledAzurePortableHooks(home, [home])).resolves.toMatchObject([
+        { event: "SessionStart", name: "portable" },
+        { event: "UserPromptSubmit", name: "portable" },
+      ]);
+      await expect(
+        runAzurePortableHooks({ azureHome: home, event: "SessionStart", trigger: "startup" }),
+      ).resolves.toMatchObject([{ outcome: "success", additionalContext: "safe" }]);
+    } finally {
+      if (prior === undefined) delete process.env.AZURE_TEST_PROVIDER_KEY;
+      else process.env.AZURE_TEST_PROVIDER_KEY = prior;
+    }
+  });
+
+  it("fails open when a hook returns malformed JSON", async () => {
+    const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "azure-home-"));
+    directories.push(home);
+    await NodeFSP.mkdir(NodePath.join(home, "hooks"), { recursive: true });
+    await NodeFSP.writeFile(
+      NodePath.join(home, "hooks", "malformed.json"),
+      JSON.stringify({
+        hooks: {
+          UserPromptSubmit: [
+            {
+              hooks: [
+                {
+                  type: "command",
+                  command: "printf '{broken'",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+
+    await expect(
+      runAzurePortableHooks({ azureHome: home, event: "UserPromptSubmit", trigger: "submit" }),
+    ).resolves.toMatchObject([
+      {
+        outcome: "error",
+        stderr: expect.stringContaining("malformed JSON"),
+      },
+    ]);
+  });
+
+  it("normalizes only enabled stdio and HTTP MCP server descriptors", async () => {
+    const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "azure-home-"));
+    directories.push(home);
+    await NodeFSP.mkdir(NodePath.join(home, "mcp"), { recursive: true });
+    await NodeFSP.writeFile(
+      NodePath.join(home, "mcp", "main.json"),
+      JSON.stringify({
+        mcpServers: {
+          search: { type: "stdio", command: "azure", args: ["mcp", "serve"] },
+          remote: {
+            url: "https://mcp.example.test/tools",
+            headers: { Authorization: "Bearer test" },
+          },
+        },
+      }),
+    );
+    await expect(discoverEnabledAzureMcpServers(home)).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "remote", transport: "http", toolPrefix: "remote" }),
+        expect.objectContaining({ name: "search", transport: "stdio", command: "azure" }),
+      ]),
+    );
+  });
+
+  it("keeps project skills ahead of Azure, and Azure ahead of provider-home skills", () => {
+    const merged = mergeAzureProviderSkills(
+      [
+        { name: "same", path: "/home/SKILL.md", enabled: true, scope: "user" },
+        { name: "same", path: "/project/SKILL.md", enabled: true, scope: "project" },
+      ],
+      [{ name: "same", path: "/azure/SKILL.md", enabled: true, scope: "azure" }],
+    );
+    expect(merged).toEqual([
+      expect.objectContaining({ name: "same", path: "/project/SKILL.md", scope: "project" }),
     ]);
   });
 

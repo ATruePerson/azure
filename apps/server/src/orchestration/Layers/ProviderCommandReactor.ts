@@ -757,6 +757,17 @@ const make = Effect.gen(function* () {
       const resumeCursor = shouldRestartForModelChange
         ? undefined
         : (activeSession?.resumeCursor ?? undefined);
+      if (activeSession?.activeTurnId !== undefined) {
+        yield* Effect.logInfo("provider command reactor interrupting active turn before restart", {
+          threadId,
+          turnId: activeSession.activeTurnId,
+          currentProvider: activeSession.provider,
+        });
+        yield* providerService.interruptTurn({
+          threadId,
+          turnId: activeSession.activeTurnId,
+        });
+      }
       yield* Effect.logInfo("provider command reactor restarting provider session", {
         threadId,
         existingSessionThreadId,

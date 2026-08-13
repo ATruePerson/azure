@@ -41,6 +41,10 @@ import * as Stream from "effect/Stream";
 import * as Semaphore from "effect/Semaphore";
 
 import { ServerConfig } from "../../config.ts";
+import {
+  discoverEnabledAzureProviderSkills,
+  mergeAzureProviderSkills,
+} from "../AzureHomeCapabilities.ts";
 import { ProviderInstanceRegistry } from "../Services/ProviderInstanceRegistry.ts";
 import { ProviderRegistry, type ProviderRegistryShape } from "../Services/ProviderRegistry.ts";
 import {
@@ -181,7 +185,15 @@ const correlateSnapshotWithSource = (
       ),
     );
   }
-  return Effect.succeed(snapshot);
+  return Effect.tryPromise(() => discoverEnabledAzureProviderSkills()).pipe(
+    Effect.map((azureSkills) => ({
+      ...snapshot,
+      skills: mergeAzureProviderSkills(snapshot.skills, azureSkills),
+    })),
+    // The provider itself remains usable if the optional Azure home is absent
+    // or unreadable. An empty inventory is the safe fallback.
+    Effect.orElseSucceed(() => snapshot),
+  );
 };
 
 /**

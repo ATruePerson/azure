@@ -1,13 +1,19 @@
 // @effect-diagnostics globalDate:off
 // @effect-diagnostics nodeBuiltinImport:off
 import { randomUUID } from "node:crypto";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import {
+  ApprovalRequestId,
   EventId,
   ProviderDriverKind,
   ProviderInstanceId,
   RuntimeItemId,
+  RuntimeRequestId,
   ThreadId,
   TurnId,
+  type ProviderApprovalDecision,
   type ProviderRuntimeEvent,
   type ProviderOptionSelection,
   type ProviderSession,
@@ -30,6 +36,7 @@ import type {
 } from "../Services/ProviderAdapter.ts";
 import { resolveModelContextWindow } from "@t3tools/shared/model";
 import { ProviderAdapterSessionNotFoundError, ProviderAdapterValidationError } from "../Errors.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 
 export interface OpenAICompatibleTool {
   readonly type: "function";
@@ -38,6 +45,27 @@ export interface OpenAICompatibleTool {
     readonly description?: string;
     readonly parameters?: Record<string, unknown>;
   };
+}
+
+export interface OpenAICompatibleMcpTool {
+  readonly name: string;
+  readonly description?: string;
+  readonly inputSchema: Record<string, unknown>;
+  readonly annotations?: {
+    readonly readOnlyHint?: boolean;
+    readonly destructiveHint?: boolean;
+    readonly idempotentHint?: boolean;
+    readonly openWorldHint?: boolean;
+  };
+}
+
+export interface OpenAICompatibleMcpClient {
+  readonly listTools: () => Promise<ReadonlyArray<OpenAICompatibleMcpTool>>;
+  readonly callTool: (input: {
+    readonly name: string;
+    readonly arguments: Record<string, unknown>;
+  }) => Promise<unknown>;
+  readonly close?: () => Promise<void>;
 }
 
 export type OpenAICompatibleToolChoice = "none" | "auto" | "required" | Record<string, unknown>;
@@ -54,6 +82,10 @@ export interface OpenAICompatibleRuntimeOptions {
   readonly defaultModel?: string;
   readonly tools?: ReadonlyArray<OpenAICompatibleTool>;
   readonly toolChoice?: OpenAICompatibleToolChoice;
+  /** Test seam; production uses Azure's authenticated local MCP endpoint. */
+  readonly mcpClientFactory?: (
+    config: McpProviderSession.McpProviderSessionConfig,
+  ) => Promise<OpenAICompatibleMcpClient>;
 }
 
 export interface OpenAICompatibleModel {
@@ -157,9 +189,59 @@ interface SessionState {
   contextUsedTokens: number;
   compacted: boolean;
   compactedThrough?: TurnId;
+  mcpClient?: OpenAICompatibleMcpClient;
+  mcpProviderSessionId?: string;
+  mcpTools?: ReadonlyMap<string, OpenAICompatibleMcpTool>;
+  pendingMcpApprovals: Map<ApprovalRequestId, Deferred.Deferred<ProviderApprovalDecision>>;
+  approvedMcpTools: Set<string>;
 }
 
 const RESUME_VERSION = 2;
+const MAX_MCP_TOOL_ROUNDS = 16;
+const MAX_MCP_TOOL_RESULT_BYTES = 64 * 1024;
+
+async function createAzureMcpClient(
+  config: McpProviderSession.McpProviderSessionConfig,
+): Promise<OpenAICompatibleMcpClient> {
+  const client = new Client({ name: "Azure Code", version: "1" });
+  const transport = new StreamableHTTPClientTransport(new URL(config.endpoint), {
+    requestInit: { headers: { Authorization: config.authorizationHeader } },
+  });
+  await client.connect(transport as Transport);
+  return {
+    listTools: async () => {
+      const result = await client.listTools();
+      return result.tools.map((tool) => ({
+        name: tool.name,
+        ...(tool.description ? { description: tool.description } : {}),
+        inputSchema: tool.inputSchema as Record<string, unknown>,
+        ...(tool.annotations
+          ? {
+              annotations: {
+                ...(tool.annotations.readOnlyHint !== undefined
+                  ? { readOnlyHint: tool.annotations.readOnlyHint }
+                  : {}),
+                ...(tool.annotations.destructiveHint !== undefined
+                  ? { destructiveHint: tool.annotations.destructiveHint }
+                  : {}),
+                ...(tool.annotations.idempotentHint !== undefined
+                  ? { idempotentHint: tool.annotations.idempotentHint }
+                  : {}),
+                ...(tool.annotations.openWorldHint !== undefined
+                  ? { openWorldHint: tool.annotations.openWorldHint }
+                  : {}),
+              },
+            }
+          : {}),
+      }));
+    },
+    callTool: (input) => client.callTool(input),
+    close: async () => {
+      await transport.terminateSession().catch(() => undefined);
+      await client.close();
+    },
+  };
+}
 
 function resumeMessages(value: unknown): Message[] {
   if (!record(value) || !Array.isArray(value.messages)) return [];
@@ -234,6 +316,39 @@ function record(value: unknown): value is Record<string, unknown> {
 
 function text(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function toolResultContent(value: unknown): string {
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(value) ?? "null";
+  } catch {
+    serialized = JSON.stringify({
+      isError: true,
+      error: "Tool returned an unserializable result.",
+    });
+  }
+  if (Buffer.byteLength(serialized, "utf8") <= MAX_MCP_TOOL_RESULT_BYTES) return serialized;
+  const preview = Buffer.from(serialized, "utf8")
+    .subarray(0, 8 * 1024)
+    .toString("utf8");
+  return JSON.stringify({ isError: true, truncated: true, preview });
+}
+
+function mcpApprovalKey(toolName: string): string {
+  const separator = toolName.indexOf("__");
+  return `${separator > 0 ? toolName.slice(0, separator) : "azure"}:${toolName}`;
+}
+
+function mcpToolToOpenAi(tool: OpenAICompatibleMcpTool): OpenAICompatibleTool {
+  return {
+    type: "function",
+    function: {
+      name: tool.name,
+      ...(tool.description ? { description: tool.description } : {}),
+      parameters: tool.inputSchema,
+    },
+  };
 }
 
 function optionValue(
@@ -385,6 +500,8 @@ function parseJson(
   });
 }
 
+const decodeToolArguments = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
+
 function makeEventBase(
   provider: ProviderDriverKind,
   threadId: ThreadId,
@@ -459,6 +576,102 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
     return state ? Effect.succeed(state) : Effect.fail(sessionError(threadId));
   };
 
+  const emitMcpWarning = (threadId: ThreadId, turnId: TurnId | undefined, message: string) =>
+    emit({
+      ...makeEventBase(options.provider, threadId, ++eventNumber, turnId),
+      type: "runtime.warning",
+      payload: { message },
+    });
+
+  const loadMcpTools = (state: SessionState, threadId: ThreadId, turnId: TurnId) =>
+    Effect.gen(function* () {
+      const config = McpProviderSession.readMcpProviderSession(threadId);
+      if (!config) return [] as ReadonlyArray<OpenAICompatibleMcpTool>;
+      if (state.mcpProviderSessionId !== config.providerSessionId) {
+        if (state.mcpClient?.close) {
+          yield* Effect.tryPromise(() => state.mcpClient!.close!()).pipe(Effect.ignore);
+        }
+        const mcpClient = yield* Effect.tryPromise(() =>
+          options.mcpClientFactory
+            ? options.mcpClientFactory(config)
+            : createAzureMcpClient(config),
+        ).pipe(
+          Effect.tapError(() =>
+            emitMcpWarning(threadId, turnId, "Azure MCP tools are unavailable for this session."),
+          ),
+          Effect.orElseSucceed(() => undefined),
+        );
+        if (mcpClient) state.mcpClient = mcpClient;
+        else delete state.mcpClient;
+        state.mcpProviderSessionId = config.providerSessionId;
+        delete state.mcpTools;
+      }
+      if (!state.mcpClient) return [] as ReadonlyArray<OpenAICompatibleMcpTool>;
+      if (state.mcpTools) return [...state.mcpTools.values()];
+      const tools = yield* Effect.tryPromise(() => state.mcpClient!.listTools()).pipe(
+        Effect.tapError(() =>
+          emitMcpWarning(threadId, turnId, "Azure MCP tool listing failed for this session."),
+        ),
+        Effect.orElseSucceed(() => [] as ReadonlyArray<OpenAICompatibleMcpTool>),
+      );
+      state.mcpTools = new Map(tools.map((tool) => [tool.name, tool] as const));
+      return tools;
+    });
+
+  const requestMcpApproval = (
+    state: SessionState,
+    input: {
+      readonly threadId: ThreadId;
+      readonly turnId: TurnId;
+      readonly tool: OpenAICompatibleMcpTool;
+      readonly arguments: Record<string, unknown>;
+    },
+  ): Effect.Effect<boolean, never> =>
+    Effect.gen(function* () {
+      const key = mcpApprovalKey(input.tool.name);
+      const canAutoRun =
+        input.tool.annotations?.readOnlyHint === true &&
+        input.tool.annotations?.destructiveHint === false;
+      if (
+        state.session.runtimeMode === "full-access" ||
+        state.approvedMcpTools.has(key) ||
+        ((state.session.runtimeMode === "auto" ||
+          state.session.runtimeMode === "auto-accept-edits") &&
+          canAutoRun)
+      ) {
+        return true;
+      }
+      const requestId = ApprovalRequestId.make(randomUUID());
+      const decision = yield* Deferred.make<ProviderApprovalDecision>();
+      state.pendingMcpApprovals.set(requestId, decision);
+      yield* emit({
+        ...makeEventBase(options.provider, input.threadId, ++eventNumber, input.turnId),
+        type: "request.opened",
+        requestId: RuntimeRequestId.make(requestId),
+        payload: {
+          requestType: "dynamic_tool_call",
+          detail: `Run Azure MCP tool '${input.tool.name}'?`,
+          args: { toolName: input.tool.name, arguments: input.arguments },
+        },
+      });
+      const resolved = yield* Deferred.await(decision).pipe(
+        Effect.ensuring(Effect.sync(() => state.pendingMcpApprovals.delete(requestId))),
+      );
+      yield* emit({
+        ...makeEventBase(options.provider, input.threadId, ++eventNumber, input.turnId),
+        type: "request.resolved",
+        requestId: RuntimeRequestId.make(requestId),
+        payload: { requestType: "dynamic_tool_call", decision: resolved },
+      });
+      if (resolved === "acceptForSession") state.approvedMcpTools.add(key);
+      return resolved === "accept" || resolved === "acceptForSession";
+    });
+
+  const cancelMcpApprovals = (state: SessionState) =>
+    Effect.forEach([...state.pendingMcpApprovals.values()], (approval) =>
+      Deferred.succeed(approval, "cancel"),
+    ).pipe(Effect.asVoid);
+
   const listModels = Effect.fn("OpenAICompatible.listModels")(function* () {
     if (!options.apiKey.trim()) {
       return yield* new OpenAICompatibleAuthError({ operation: "models", status: 401 });
@@ -505,13 +718,19 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
       const existing = sessions.get(input.threadId);
       const model = input.modelSelection?.model ?? options.defaultModel;
       const createdAt = now();
-      if (existing?.activeTurnId !== undefined) {
+      const reconfiguresActiveSession =
+        existing?.activeTurnId !== undefined &&
+        (input.runtimeMode !== existing.session.runtimeMode ||
+          (input.cwd ?? existing.session.cwd) !== existing.session.cwd ||
+          (model ?? existing.session.model) !== existing.session.model);
+      if (reconfiguresActiveSession) {
         return yield* new ProviderAdapterValidationError({
           provider: String(options.provider),
           operation: "startSession",
           issue: "Cannot restart a session while a turn is active.",
         });
       }
+      if (existing?.activeTurnId !== undefined) return existing.session;
       if (existing) {
         existing.modelOptions = input.modelSelection
           ? (input.modelSelection.options ?? [])
@@ -562,6 +781,8 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
         ...(record(input.resumeCursor) && typeof input.resumeCursor.compactedThrough === "string"
           ? { compactedThrough: TurnId.make(input.resumeCursor.compactedThrough) }
           : {}),
+        pendingMcpApprovals: new Map(),
+        approvedMcpTools: new Set(),
       });
       yield* emit({
         ...makeEventBase(options.provider, input.threadId, ++eventNumber),
@@ -709,27 +930,37 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
       readonly beforeMessages: number;
       readonly beforeTurns: number;
       readonly modelOptions: ReadonlyArray<ProviderOptionSelection>;
+      readonly items: unknown[];
+      readonly mcpRounds: number;
     },
   ): Effect.Effect<void, OpenAICompatibleError> =>
     Effect.gen(function* () {
       const operation = "chat.completions";
+      const mcpTools = yield* loadMcpTools(state, input.threadId, input.turnId);
+      const mcpToolsByName = new Map(mcpTools.map((tool) => [tool.name, tool] as const));
+      const requestTools = [
+        ...(options.tools ?? []).filter((tool) => !mcpToolsByName.has(tool.function.name)),
+        ...mcpTools.map(mcpToolToOpenAi),
+      ];
       const toolCalls = new Map<number, ToolCall>();
       let assistantText = "";
       let reasoningContent = "";
       const reasoningDetails: unknown[] = [];
       let finishReason: string | undefined;
       let usage: unknown;
-      yield* emit({
-        ...makeEventBase(options.provider, input.threadId, ++eventNumber, input.turnId),
-        type: "turn.started",
-        payload: { ...(input.model ? { model: input.model } : {}) },
-      });
+      if (input.mcpRounds === 0) {
+        yield* emit({
+          ...makeEventBase(options.provider, input.threadId, ++eventNumber, input.turnId),
+          type: "turn.started",
+          payload: { ...(input.model ? { model: input.model } : {}) },
+        });
+      }
 
       const payload: Record<string, unknown> = {
         model: input.model ?? options.defaultModel,
         messages: state.messages,
         stream: true,
-        ...(options.tools ? { tools: options.tools } : {}),
+        ...(requestTools.length > 0 ? { tools: requestTools } : {}),
         ...(options.toolChoice ? { tool_choice: options.toolChoice } : {}),
         ...requestOptions(
           options.provider,
@@ -770,7 +1001,13 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
             Effect.fail(
               isAuthStatus(response.status)
                 ? new OpenAICompatibleAuthError({ operation, status: response.status })
-                : new OpenAICompatibleProviderError({ operation, status: response.status }),
+                : mcpTools.length > 0 && response.status >= 400 && response.status < 500
+                  ? new OpenAICompatibleValidationError({
+                      operation,
+                      detail:
+                        "The selected model rejected OpenAI-compatible function tools. Choose a model that supports tool calling.",
+                    })
+                  : new OpenAICompatibleProviderError({ operation, status: response.status }),
             ),
           ),
         );
@@ -870,7 +1107,9 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
                           },
                         };
                         toolCalls.set(index, next);
-                        const itemId = RuntimeItemId.make(`tool:${String(input.turnId)}:${index}`);
+                        const itemId = RuntimeItemId.make(
+                          `tool:${String(input.turnId)}:${input.mcpRounds}:${index}`,
+                        );
                         return emit({
                           ...makeEventBase(
                             options.provider,
@@ -934,9 +1173,10 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
         });
       }
 
-      const assembledToolCalls = Array.from(toolCalls.entries())
-        .sort(([left], [right]) => left - right)
-        .map(([, value]) => value);
+      const indexedToolCalls = Array.from(toolCalls.entries()).sort(
+        ([left], [right]) => left - right,
+      );
+      const assembledToolCalls = indexedToolCalls.map(([, value]) => value);
       if (assistantText.trim().length === 0 && assembledToolCalls.length === 0) {
         const detail = "Provider completed without assistant text or a tool call.";
         yield* emit({
@@ -961,10 +1201,90 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
           : []),
         ...assembledToolCalls.map((tool) => ({ type: "toolCall", tool })),
       ];
+      input.items.push(...itemList);
+      const hasAzureMcpToolCall = indexedToolCalls.some(([, tool]) =>
+        tool.function.name.includes("__"),
+      );
+      if (hasAzureMcpToolCall) {
+        if (input.mcpRounds >= MAX_MCP_TOOL_ROUNDS) {
+          return yield* new OpenAICompatibleValidationError({
+            operation,
+            detail: `Azure MCP tool-call limit (${MAX_MCP_TOOL_ROUNDS}) reached.`,
+          });
+        }
+        for (const [index, call] of indexedToolCalls) {
+          const tool = mcpToolsByName.get(call.function.name);
+          let result: unknown;
+          let status: "completed" | "failed" | "declined" = "completed";
+          if (!tool) {
+            result = {
+              isError: true,
+              error: `Unknown Azure MCP tool '${call.function.name}'.`,
+            };
+            status = "failed";
+          } else {
+            const parsedArguments = Effect.try({
+              try: () => decodeToolArguments(call.function.arguments),
+              catch: () => undefined,
+            });
+            const arguments_ = yield* parsedArguments.pipe(
+              Effect.map((parsed) => (record(parsed) ? parsed : undefined)),
+              Effect.orElseSucceed(() => undefined),
+            );
+            if (!arguments_) {
+              result = { isError: true, error: "Tool arguments must be valid JSON object." };
+              status = "failed";
+            }
+            if (arguments_) {
+              const approved = yield* requestMcpApproval(state, {
+                threadId: input.threadId,
+                turnId: input.turnId,
+                tool,
+                arguments: arguments_,
+              });
+              if (!approved) {
+                result = { isError: true, error: "User declined this tool call." };
+                status = "declined";
+              } else if (!state.mcpClient) {
+                result = { isError: true, error: "Azure MCP tool is unavailable." };
+                status = "failed";
+              } else {
+                result = yield* Effect.tryPromise(() => {
+                  return state.mcpClient!.callTool({ name: tool.name, arguments: arguments_! });
+                }).pipe(
+                  Effect.orElseSucceed(() => {
+                    return {
+                      isError: true,
+                      error: "Azure MCP server failed while running this tool.",
+                    };
+                  }),
+                );
+                if (record(result) && result.isError === true) status = "failed";
+              }
+            }
+          }
+          state.messages.push({
+            role: "tool",
+            content: toolResultContent(result),
+            tool_call_id: call.id,
+          });
+          yield* emit({
+            ...makeEventBase(options.provider, input.threadId, ++eventNumber, input.turnId),
+            itemId: RuntimeItemId.make(`tool:${String(input.turnId)}:${input.mcpRounds}:${index}`),
+            type: "item.completed",
+            payload: { itemType: "dynamic_tool_call", status, data: call },
+          });
+        }
+        state.session = {
+          ...state.session,
+          resumeCursor: makeResumeCursor(input.threadId, state.messages, state.compactedThrough),
+        };
+        return yield* runTurn(state, { ...input, mcpRounds: input.mcpRounds + 1 });
+      }
       const turn: TurnState = {
         id: input.turnId,
         messages: state.messages.slice(input.beforeMessages),
-        items: itemList,
+        items: input.items,
       };
       state.turns.push(turn);
       state.session = {
@@ -990,10 +1310,10 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
           payload: { usage: usageSnapshot },
         });
       }
-      for (const [index, tool] of toolCalls) {
+      for (const [index, tool] of indexedToolCalls) {
         yield* emit({
           ...makeEventBase(options.provider, input.threadId, ++eventNumber, input.turnId),
-          itemId: RuntimeItemId.make(`tool:${String(input.turnId)}:${index}`),
+          itemId: RuntimeItemId.make(`tool:${String(input.turnId)}:${input.mcpRounds}:${index}`),
           type: "item.completed",
           payload: { itemType: "dynamic_tool_call", status: "completed", data: tool },
         });
@@ -1022,6 +1342,8 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
       readonly beforeMessages: number;
       readonly beforeTurns: number;
       readonly modelOptions: ReadonlyArray<ProviderOptionSelection>;
+      readonly items: unknown[];
+      readonly mcpRounds: number;
     },
   ): Effect.Effect<void, never> =>
     Effect.raceFirst(
@@ -1073,11 +1395,15 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
         });
       }),
       Effect.ensuring(
-        Effect.sync(() => {
-          state.activeTurnId = undefined;
-          state.turnFiber = undefined;
-          state.interruptSignals.delete(input.turnId);
-        }),
+        cancelMcpApprovals(state).pipe(
+          Effect.andThen(() =>
+            Effect.sync(() => {
+              state.activeTurnId = undefined;
+              state.turnFiber = undefined;
+              state.interruptSignals.delete(input.turnId);
+            }),
+          ),
+        ),
       ),
     );
 
@@ -1090,6 +1416,8 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
       readonly beforeMessages: number;
       readonly beforeTurns: number;
       readonly modelOptions: ReadonlyArray<ProviderOptionSelection>;
+      readonly items: unknown[];
+      readonly mcpRounds: number;
     },
   ): Effect.Effect<void, never> =>
     Effect.gen(function* () {
@@ -1158,6 +1486,8 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
         beforeTurns,
         ...(model === undefined ? {} : { model }),
         modelOptions: state.modelOptions,
+        items: [],
+        mcpRounds: 0,
       });
       return { threadId: input.threadId, turnId } satisfies ProviderTurnStartResult;
     });
@@ -1226,6 +1556,8 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
         beforeMessages,
         beforeTurns,
         modelOptions: state.modelOptions,
+        items: [],
+        mcpRounds: 0,
       });
       return { threadId: input.threadId, turnId } satisfies ProviderTurnStartResult;
     });
@@ -1243,31 +1575,49 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
     listModels,
     interruptTurn: (threadId, turnId) =>
       getSession(threadId).pipe(
-        Effect.tap((state) =>
+        Effect.flatMap((state) =>
           Effect.gen(function* () {
             if (
-              state.activeTurnId !== undefined &&
-              (turnId === undefined || state.activeTurnId === turnId)
+              state.activeTurnId === undefined ||
+              (turnId !== undefined && state.activeTurnId !== turnId)
             ) {
-              state.interrupted.add(state.activeTurnId);
-              const signal = state.interruptSignals.get(state.activeTurnId);
-              if (signal) yield* Deferred.succeed(signal, undefined);
+              return;
             }
+            state.interrupted.add(state.activeTurnId);
+            const signal = state.interruptSignals.get(state.activeTurnId);
+            if (signal) yield* Deferred.succeed(signal, undefined);
+            if (state.turnFiber) yield* Fiber.join(state.turnFiber);
           }),
         ),
-        Effect.asVoid,
       ),
-    respondToRequest: (threadId) => getSession(threadId).pipe(Effect.asVoid),
+    respondToRequest: (threadId, requestId, decision) =>
+      getSession(threadId).pipe(
+        Effect.flatMap((state) => {
+          const pending = state.pendingMcpApprovals.get(requestId);
+          return pending
+            ? Deferred.succeed(pending, decision).pipe(Effect.asVoid)
+            : Effect.fail(
+                new OpenAICompatibleValidationError({
+                  operation: "respondToRequest",
+                  detail: "requestId does not match a pending Azure MCP tool approval.",
+                }),
+              );
+        }),
+      ),
     respondToUserInput: (threadId) => getSession(threadId).pipe(Effect.asVoid),
     stopSession: (threadId) =>
       Effect.gen(function* () {
         const state = yield* getSession(threadId);
+        yield* cancelMcpApprovals(state);
         if (state.activeTurnId !== undefined) {
           const signal = state.interruptSignals.get(state.activeTurnId);
           if (signal) yield* Deferred.succeed(signal, undefined);
         }
         if (state.turnFiber) {
           yield* Fiber.join(state.turnFiber);
+        }
+        if (state.mcpClient?.close) {
+          yield* Effect.tryPromise(() => state.mcpClient!.close!()).pipe(Effect.ignore);
         }
         state.activeTurnId = undefined;
         state.session = { ...state.session, status: "closed", updatedAt: now() };

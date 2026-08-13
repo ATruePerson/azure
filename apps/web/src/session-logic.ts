@@ -33,6 +33,7 @@ export const PROVIDER_OPTIONS: Array<{
   pickerSidebarBadge?: "new" | "soon";
 }> = [
   { value: ProviderDriverKind.make("codex"), label: "Codex", available: true },
+  { value: ProviderDriverKind.make("chatgptWeb"), label: "ChatGPT Web", available: true },
   { value: ProviderDriverKind.make("claudeAgent"), label: "Claude", available: true },
   {
     value: ProviderDriverKind.make("opencode"),

@@ -130,6 +130,7 @@ export const ModelCapabilities = Schema.Struct({
 export type ModelCapabilities = typeof ModelCapabilities.Type;
 
 const CODEX_DRIVER_KIND = ProviderDriverKind.make("codex");
+const CHATGPT_WEB_DRIVER_KIND = ProviderDriverKind.make("chatgptWeb");
 const CLAUDE_DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
 const CURSOR_DRIVER_KIND = ProviderDriverKind.make("cursor");
 const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
@@ -222,6 +223,7 @@ export const MODEL_SLUG_ALIASES_BY_PROVIDER: Partial<
 
 export const PROVIDER_DISPLAY_NAMES: Partial<Record<ProviderDriverKind, string>> = {
   [CODEX_DRIVER_KIND]: "Codex",
+  [CHATGPT_WEB_DRIVER_KIND]: "ChatGPT Web",
   [CLAUDE_DRIVER_KIND]: "Claude",
   [CURSOR_DRIVER_KIND]: "Cursor",
   [GROK_DRIVER_KIND]: "Grok",

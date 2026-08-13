@@ -68,6 +68,11 @@ import {
   executeAzureMemoryCommand,
   prependAzureProjectInstructions,
 } from "../AzureProjectInstructions.ts";
+import {
+  AzureSkillResolutionError,
+  resolveAzureExplicitSkills,
+  runAzurePortableHooks,
+} from "../AzureHomeCapabilities.ts";
 const isModelSelection = Schema.is(ModelSelection);
 
 /**
@@ -243,6 +248,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
   const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
   const azureProjectInstructionReservations = yield* Ref.make(new Map<ThreadId, symbol>());
+  const azureSessionHookContexts = yield* Ref.make(new Map<ThreadId, string>());
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
   const resetAzureProjectInstructionReservation = (threadId: ThreadId) =>
     Ref.update(azureProjectInstructionReservations, (reservations) => {
@@ -273,7 +279,10 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           return [token, next] as const;
         });
   const prepareMcpSession = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) =>
-    McpSessionRegistry.issueActiveMcpCredential({ threadId, providerInstanceId }).pipe(
+    McpSessionRegistry.issueActiveMcpCredential({
+      threadId,
+      providerInstanceId,
+    }).pipe(
       Effect.tap((credential) =>
         credential
           ? Effect.sync(() => McpProviderSession.setMcpProviderSession(credential.config))
@@ -294,6 +303,101 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       ),
       Effect.flatMap((canonicalEvent) => PubSub.publish(runtimeEventPubSub, canonicalEvent)),
       Effect.asVoid,
+    );
+
+  const appendAzureSessionHookContext = (threadId: ThreadId, context: string) =>
+    Ref.update(azureSessionHookContexts, (contexts) => {
+      const next = new Map(contexts);
+      next.set(threadId, [contexts.get(threadId), context].filter(Boolean).join("\n\n"));
+      return next;
+    });
+  const takeAzureSessionHookContext = (threadId: ThreadId) =>
+    Ref.get(azureSessionHookContexts).pipe(Effect.map((contexts) => contexts.get(threadId)));
+  const commitAzureSessionHookContext = (threadId: ThreadId, context: string | undefined) =>
+    !context
+      ? Effect.void
+      : Ref.update(azureSessionHookContexts, (contexts) => {
+          if (contexts.get(threadId) !== context) return contexts;
+          const next = new Map(contexts);
+          next.delete(threadId);
+          return next;
+        });
+  const clearAzureSessionHookContext = (threadId: ThreadId) =>
+    Ref.update(azureSessionHookContexts, (contexts) => {
+      if (!contexts.has(threadId)) return contexts;
+      const next = new Map(contexts);
+      next.delete(threadId);
+      return next;
+    });
+  const runPortableHooks = (input: {
+    readonly threadId: ThreadId;
+    readonly provider: ProviderDriverKind;
+    readonly providerInstanceId: ProviderInstanceId;
+    readonly event: "SessionStart" | "UserPromptSubmit";
+    readonly trigger: string;
+    readonly cwd?: string;
+    readonly prompt?: string;
+  }) =>
+    Effect.tryPromise(() =>
+      runAzurePortableHooks({
+        event: input.event,
+        trigger: input.trigger,
+        ...(input.cwd ? { cwd: input.cwd } : {}),
+        ...(input.prompt ? { prompt: input.prompt } : {}),
+      }),
+    ).pipe(
+      Effect.orElseSucceed(() => []),
+      Effect.flatMap((results) =>
+        Effect.forEach(
+          results,
+          (result) =>
+            Effect.gen(function* () {
+              const createdAt = yield* nowIso;
+              const base = {
+                eventId: EventId.make(randomUUID()),
+                provider: input.provider,
+                providerInstanceId: input.providerInstanceId,
+                threadId: input.threadId,
+                createdAt,
+              } as const;
+              yield* publishRuntimeEvent({
+                ...base,
+                type: "hook.started",
+                payload: {
+                  hookId: result.hook.id,
+                  hookName: result.hook.name,
+                  hookEvent: result.hook.event,
+                },
+              });
+              yield* publishRuntimeEvent({
+                ...base,
+                eventId: EventId.make(randomUUID()),
+                type: "hook.completed",
+                payload: {
+                  hookId: result.hook.id,
+                  outcome: result.outcome,
+                  ...(result.output ? { output: result.output } : {}),
+                  ...(result.stdout ? { stdout: result.stdout } : {}),
+                  ...(result.stderr ? { stderr: result.stderr } : {}),
+                  ...(result.exitCode !== undefined ? { exitCode: result.exitCode } : {}),
+                },
+              });
+              if (result.outcome !== "success") {
+                yield* publishRuntimeEvent({
+                  ...base,
+                  eventId: EventId.make(randomUUID()),
+                  type: "runtime.warning",
+                  payload: { message: `Azure hook '${result.hook.name}' did not complete.` },
+                });
+              }
+              return result.additionalContext;
+            }),
+          { concurrency: 1 },
+        ),
+      ),
+      Effect.map((contexts) =>
+        contexts.filter((context): context is string => Boolean(context)).join("\n\n"),
+      ),
     );
 
   const publishLocalAzureMemoryCommand = (input: {
@@ -553,6 +657,17 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         input.binding.threadId,
         { azureProjectInstructionsProcessed: false },
       );
+      const sessionHookContext = yield* runPortableHooks({
+        threadId: input.binding.threadId,
+        provider: resumed.provider,
+        providerInstanceId: bindingInstanceId,
+        event: "SessionStart",
+        trigger: "resume",
+        ...(persistedCwd ? { cwd: persistedCwd } : {}),
+      });
+      if (sessionHookContext) {
+        yield* appendAzureSessionHookContext(input.binding.threadId, sessionHookContext);
+      }
       yield* analytics.record("provider.session.recovered", {
         provider: resumed.provider,
         strategy: "resume-thread",
@@ -735,7 +850,8 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           "provider.cwd.effective": effectiveCwd ?? "",
         });
         const adapter = yield* registry.getByInstance(resolvedInstanceId);
-        yield* prepareMcpSession(threadId, resolvedInstanceId);
+        const hadSession = yield* adapter.hasSession(threadId);
+        if (!hadSession) yield* prepareMcpSession(threadId, resolvedInstanceId);
         const session = yield* adapter
           .startSession({
             ...input,
@@ -743,7 +859,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             ...(effectiveCwd !== undefined ? { cwd: effectiveCwd } : {}),
             ...(effectiveResumeCursor !== undefined ? { resumeCursor: effectiveResumeCursor } : {}),
           })
-          .pipe(Effect.onError(() => clearMcpSession(threadId)));
+          .pipe(Effect.onError(() => (hadSession ? Effect.void : clearMcpSession(threadId))));
 
         if (session.provider !== adapter.provider) {
           yield* clearMcpSession(threadId);
@@ -766,6 +882,19 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           modelSelection: input.modelSelection,
           azureProjectInstructionsProcessed: false,
         });
+        if (!hadSession) {
+          const sessionHookContext = yield* runPortableHooks({
+            threadId,
+            provider: sessionWithInstance.provider,
+            providerInstanceId: resolvedInstanceId,
+            event: "SessionStart",
+            trigger: effectiveResumeCursor === undefined ? "startup" : "resume",
+            ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
+          });
+          if (sessionHookContext) {
+            yield* appendAzureSessionHookContext(threadId, sessionHookContext);
+          }
+        }
         yield* analytics.record("provider.session.started", {
           provider: sessionWithInstance.provider,
           runtimeMode: input.runtimeMode,
@@ -849,6 +978,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         input.threadId,
         routed.azureProjectInstructionsProcessed,
       );
+      const sessionHookContext = yield* takeAzureSessionHookContext(input.threadId);
       let localAzureCommandHandled = false;
       const turn = yield* Effect.gen(function* () {
         const commandCwd = routed.cwd;
@@ -874,17 +1004,45 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             message: memoryCommand.message,
           });
         }
+        const userPromptHookContext = yield* runPortableHooks({
+          threadId: input.threadId,
+          provider: routed.adapter.provider,
+          providerInstanceId: routed.instanceId,
+          event: "UserPromptSubmit",
+          trigger: "submit",
+          ...(routed.cwd ? { cwd: routed.cwd } : {}),
+          ...(input.input ? { prompt: input.input } : {}),
+        });
+        const explicitSkills = yield* Effect.tryPromise(() =>
+          resolveAzureExplicitSkills({ prompt: input.input }),
+        ).pipe(
+          Effect.mapError((cause) =>
+            toValidationError(
+              "ProviderService.sendTurn",
+              cause instanceof AzureSkillResolutionError
+                ? cause.message
+                : "Azure skill resolution failed.",
+            ),
+          ),
+        );
+        const promptWithPortableContext = [
+          sessionHookContext,
+          userPromptHookContext,
+          explicitSkills.prompt,
+        ]
+          .filter((value): value is string => Boolean(value))
+          .join("\n\n");
         const routedInput = {
           ...input,
           input: yield* Effect.tryPromise(() =>
             prependAzureProjectInstructions({
               cwd: routed.cwd,
               driver: routed.adapter.provider,
-              prompt: input.input,
+              prompt: promptWithPortableContext || input.input,
               ...(memoryCommand ? { memoryCommand } : {}),
               includeProjectInstructions: reservedAzureProjectInstructions !== null,
             }),
-          ).pipe(Effect.orElseSucceed(() => input.input)),
+          ).pipe(Effect.orElseSucceed(() => promptWithPortableContext || input.input)),
         };
         return yield* routed.adapter.sendTurn(routedInput);
       }).pipe(
@@ -903,6 +1061,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             reservedAzureProjectInstructions,
           )
         : false;
+      if (!localAzureCommandHandled) {
+        yield* commitAzureSessionHookContext(input.threadId, sessionHookContext);
+      }
       yield* directory.upsert({
         threadId: input.threadId,
         provider: routed.adapter.provider,
@@ -964,6 +1125,17 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         });
       }
       const result = yield* routed.adapter.compactContext(input);
+      const sessionHookContext = yield* runPortableHooks({
+        threadId: input.threadId,
+        provider: routed.adapter.provider,
+        providerInstanceId: routed.instanceId,
+        event: "SessionStart",
+        trigger: "compact",
+        ...(routed.cwd ? { cwd: routed.cwd } : {}),
+      });
+      if (sessionHookContext) {
+        yield* appendAzureSessionHookContext(input.threadId, sessionHookContext);
+      }
       const session = yield* routed.adapter
         .listSessions()
         .pipe(
@@ -1113,6 +1285,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         }
         yield* clearMcpSession(input.threadId);
         yield* resetAzureProjectInstructionReservation(input.threadId);
+        yield* clearAzureSessionHookContext(input.threadId);
         yield* directory.upsert({
           threadId: input.threadId,
           provider: routed.adapter.provider,
@@ -1295,6 +1468,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     yield* Effect.forEach(currentAdapters, ([, adapter]) => adapter.stopAll()).pipe(Effect.asVoid);
     yield* McpSessionRegistry.revokeAllActiveMcpCredentials();
     McpProviderSession.clearAllMcpProviderSessions();
+    yield* Ref.set(azureSessionHookContexts, new Map());
     const bindings = yield* directory.listBindings().pipe(Effect.orElseSucceed(() => []));
     yield* Effect.forEach(bindings, (binding) =>
       Effect.gen(function* () {
