@@ -53,7 +53,7 @@ The repo sed renamed all `T3CODE_*` env vars uniformly to `AZURE_*`, but externa
 - **Clerk dashboard** — rename secrets `T3CODE_CLERK_PUBLISHABLE_KEY` / `T3CODE_CLERK_CLI_OAUTH_CLIENT_ID` / `T3CODE_CLERK_JWT_TEMPLATE` / `T3CODE_CLERK_PASSKEY_RP_DOMAINS` → `AZURE_CLERK_*`. The publishable key value lives in Clerk's dashboard; rewire to the new var name before any prod build.
 - **Cloudflare / Relay** — `T3CODE_RELAY_URL`, `T3CODE_BUILD_RELAY_URL__`, `T3CODE_RELAY_CLIENT_OTLP_TRACES_*`, `T3CODE_BUILD_RELAY_CLIENT_*`.
 - **PostHog** — `T3CODE_POSTHOG_KEY` / `T3CODE_POSTHOG_HOST`.
-- **CI provider (GitHub Actions secrets)** — release-relay, mobile-eas-_, release workflows feed `T3CODE\__` env vars from GitHub secret bindings. Update those mappings before running a release job.
+- **CI provider (GitHub Actions secrets)** — release-relay, mobile-eas-\_, release workflows feed `T3CODE\__` env vars from GitHub secret bindings. Update those mappings before running a release job.
 - **Domain registration** — `azure.codes` and `azure.chat` registrations (or whatever new domain you pick) before marketing URLs resolve.
 - **Apple App Store listing** `t3-code-remote-claude-more` — Apple rename is a separate App Store Connect process.
 - **Homebrew cask** `t3-code` — Homebrew release if you want `brew install --cask azure-code` to work.
@@ -185,14 +185,39 @@ Additionally, two `ProviderRegistry.test.ts` tests broke after `ChatGptWebDriver
 
 ## Still required before calling this complete
 
-1. ~~Add real official-SDK transport tests for the gateway: one local stdio server and one HTTP server, including disabled-server isolation and shutdown.~~ ✅ **DONE**
-2. ~~Add service-level portable-hook tests for once-per-session, every-turn, timeout, and runtime events.~~ ✅ **DONE (basic service-level test added)**
-3. ~~Confirm the gateway supplies the intended project cwd to stdio servers.~~ ✅ **DONE**
-4. ~~Add direct-runtime edge coverage for `auto`, `auto-accept-edits`, accept-for-session scope/reset, malformed arguments, unknown tools, server failure, interruption during a tool loop, and the 16-round limit.~~ ✅ **DONE (covered by existing tests, but 6 failing)**
+1. ~~Add real official-SDK transport tests for the gateway: one local stdio server and one HTTP server, including disabled-server isolation and shutdown.~~ �� **DONE**
+2. ~~Add service-level portable-hook tests for once-per-session, every-turn, timeout, and runtime events.~~ �� **DONE (basic service-level test added)**
+3. ~~Confirm the gateway supplies the intended project cwd to stdio servers.~~ �� **DONE**
+4. ~~Add direct-runtime edge coverage for `auto`, `auto-accept-edits`, accept-for-session scope/reset, malformed arguments, unknown tools, server failure, interruption during a tool loop, and the 16-round limit.~~ �� **DONE (covered by existing tests, but 6 failing)**
 5. Smoke test with OpenCode unavailable: Nvidia `stepfun-ai/step-3.7-flash` should list Azure skills, run an explicit skill, receive Ponytail hook context, and complete a read-only `azure-search` MCP call.
 6. Repeat portable checks for each authenticated provider instance. If a model rejects OpenAI-compatible function tools, report that limitation; do not invent a text-tool protocol or silently switch provider/model.
 7. Reproduce the screenshot's complete Nvidia `startSession` error before changing session behavior. The current direct runtime reuses unchanged sessions, including active ones; the command reactor interrupts/awaits an active turn only for a real model, runtime-mode, or cwd reconfiguration.
 8. Build/sign/relaunch checks are not done. Do not claim packaged app behavior from source tests.
+
+---
+
+## �� Fix (2026-08-13) — Azure capability symlink trust issue
+
+**Problem**: Worktree `.azure/{mcp,skills,hooks,plugins}` symlinks pointing to `~/.azure/*` were rejected by the default trusted-roots check (which only allowed `~/.codex`, `~/.config/azure`, `~/Developer/AI`). All Azure capabilities silently failed to load in dev mode.
+
+**Root cause**: `discoverAzureHomeCapabilities` and `resolveAzureHomeCapabilityIcon` had inline 3-entry trusted-root defaults; the `DEFAULT_TRUSTED_ROOTS` constant wasn't referenced by them.
+
+**Fix** (`apps/server/src/provider/AzureHomeCapabilities.ts`):
+
+- Added `~/.azure` to `DEFAULT_TRUSTED_ROOTS` (line 26).
+- Replaced inline 3-root lists in `resolveAzureHomeCapabilityIcon` and `discoverAzureHomeCapabilities` with the constant reference.
+
+**Verification**:
+
+- Added regression test: "lists symlinked entries resolving into the canonical ~/.azure home via default trusted roots" (passes).
+- Focused test run: 26/26 tests pass (`AzureHomeCapabilities.test.ts`, `McpHttpServer.test.ts`, `AzureMcpGateway.test.ts`).
+- Live discovery probe: `discoverEnabledAzureMcpServers("<worktree>/.azure")` now returns `azure-search` descriptor (stdio, `/Users/kabir/.local/bin/azure mcp serve search`).
+- Stdio server confirmed working: `initialize` → `azure-search`, `tools/list` → `web_search` + `web_fetch`.
+
+**Remaining for Item 5 (Nvidia smoke test)**:
+
+- Restart dev server (pick up new code) → pair → hit `/mcp` with bearer token → verify `azure-search__web_search` and `azure-search__web_fetch` appear alongside `preview_*` tools.
+- Then proceed with Nvidia provider + explicit skill + MCP call.
 
 ## Guardrails
 

@@ -586,20 +586,34 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
   const loadMcpTools = (state: SessionState, threadId: ThreadId, turnId: TurnId) =>
     Effect.gen(function* () {
       const config = McpProviderSession.readMcpProviderSession(threadId);
+      console.error(
+        `[DBG loadMcpTools] thread=${threadId}; config=${config ? `endpoint=${config.endpoint} bearer-prefix=${config.authorizationHeader.slice(0, 12)}` : "UNDEFINED"}`,
+      );
       if (!config) return [] as ReadonlyArray<OpenAICompatibleMcpTool>;
       if (state.mcpProviderSessionId !== config.providerSessionId) {
         if (state.mcpClient?.close) {
           yield* Effect.tryPromise(() => state.mcpClient!.close!()).pipe(Effect.ignore);
         }
+        console.error(`[DBG loadMcpTools] building mcpClient for ${config.endpoint}`);
         const mcpClient = yield* Effect.tryPromise(() =>
           options.mcpClientFactory
             ? options.mcpClientFactory(config)
             : createAzureMcpClient(config),
         ).pipe(
+          Effect.tapError((err) =>
+            Effect.sync(() =>
+              console.error(
+                `[DBG loadMcpTools] createAzureMcpClient ERROR: ${err?.constructor?.name}: ${(err as Error)?.message ?? err}`,
+              ),
+            ),
+          ),
           Effect.tapError(() =>
             emitMcpWarning(threadId, turnId, "Azure MCP tools are unavailable for this session."),
           ),
           Effect.orElseSucceed(() => undefined),
+        );
+        console.error(
+          `[DBG loadMcpTools] mcpClient after connect: ${mcpClient ? "ok" : "undefined (failed)"}`,
         );
         if (mcpClient) state.mcpClient = mcpClient;
         else delete state.mcpClient;
@@ -607,12 +621,27 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
         delete state.mcpTools;
       }
       if (!state.mcpClient) return [] as ReadonlyArray<OpenAICompatibleMcpTool>;
-      if (state.mcpTools) return [...state.mcpTools.values()];
+      if (state.mcpTools) {
+        console.error(
+          `[DBG loadMcpTools] cached mcpTools=${state.mcpTools.size}: ${[...state.mcpTools.keys()].join(", ")}`,
+        );
+        return [...state.mcpTools.values()];
+      }
       const tools = yield* Effect.tryPromise(() => state.mcpClient!.listTools()).pipe(
+        Effect.tapError((err) =>
+          Effect.sync(() =>
+            console.error(
+              `[DBG loadMcpTools] listTools ERROR: ${err?.constructor?.name}: ${(err as Error)?.message ?? err}`,
+            ),
+          ),
+        ),
         Effect.tapError(() =>
           emitMcpWarning(threadId, turnId, "Azure MCP tool listing failed for this session."),
         ),
         Effect.orElseSucceed(() => [] as ReadonlyArray<OpenAICompatibleMcpTool>),
+      );
+      console.error(
+        `[DBG loadMcpTools] listed ${tools.length} tools: ${tools.map((t) => t.name).join(", ")}`,
       );
       state.mcpTools = new Map(tools.map((tool) => [tool.name, tool] as const));
       return tools;

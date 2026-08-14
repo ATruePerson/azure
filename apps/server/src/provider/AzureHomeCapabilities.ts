@@ -23,6 +23,7 @@ const defaultAzureHome = () =>
   process.env.AZURE_HOME?.trim() || NodePath.join(NodeOS.homedir(), ".azure");
 const DEFAULT_TRUSTED_ROOTS = [
   NodePath.join(NodeOS.homedir(), ".codex"),
+  NodePath.join(NodeOS.homedir(), ".azure"),
   NodePath.join(NodeOS.homedir(), ".config", "azure"),
   NodePath.join(NodeOS.homedir(), "Developer", "AI"),
 ] as const;
@@ -499,11 +500,7 @@ export async function resolveAzureHomeCapabilityIcon(input: {
   readonly trustedRoots?: ReadonlyArray<string>;
 }): Promise<string | null> {
   const azureHome = input.azureHome ?? defaultAzureHome();
-  const roots = input.trustedRoots ?? [
-    NodePath.join(NodeOS.homedir(), ".codex"),
-    NodePath.join(NodeOS.homedir(), ".config", "azure"),
-    NodePath.join(NodeOS.homedir(), "Developer", "AI"),
-  ];
+  const roots = input.trustedRoots ?? DEFAULT_TRUSTED_ROOTS;
   const trustedRoots = await Promise.all(
     roots.map((root) => NodeFSP.realpath(root).catch(() => root)),
   );
@@ -619,11 +616,7 @@ async function discoverDirectory(
 
 export async function discoverAzureHomeCapabilities(
   azureHome = defaultAzureHome(),
-  trustedRoots: ReadonlyArray<string> = [
-    NodePath.join(NodeOS.homedir(), ".codex"),
-    NodePath.join(NodeOS.homedir(), ".config", "azure"),
-    NodePath.join(NodeOS.homedir(), "Developer", "AI"),
-  ],
+  trustedRoots: ReadonlyArray<string> = DEFAULT_TRUSTED_ROOTS,
 ): Promise<CodexCapabilities> {
   let status: CodexCapabilities["homeStatus"] = "available";
   try {

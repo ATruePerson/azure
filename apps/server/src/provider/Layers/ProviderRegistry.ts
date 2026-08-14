@@ -136,6 +136,13 @@ export const mergeProviderSnapshot = (
     : {
         ...nextProvider,
         models: mergeProviderModels(nextProvider, previousProvider.models, nextProvider.models),
+        skills: [...(previousProvider.skills ?? []), ...(nextProvider.skills ?? [])].reduce(
+          (acc, skill) => {
+            if (!acc.some((s) => s.name === skill.name)) acc.push(skill);
+            return acc;
+          },
+          [] as ServerProviderSkill[],
+        ),
       };
 
 export const mergeProviderSnapshots = (

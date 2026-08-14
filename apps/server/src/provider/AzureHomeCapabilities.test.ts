@@ -121,6 +121,29 @@ describe("Azure home capability discovery", () => {
     });
   });
 
+  it("lists symlinked entries resolving into the canonical ~/.azure home via default trusted roots", async () => {
+    await NodeFSP.mkdir(NodePath.join(NodeOS.homedir(), ".azure"), { recursive: true });
+    const sandbox = await NodeFSP.mkdtemp(
+      NodePath.join(NodeOS.homedir(), ".azure", "azure-test-shared-"),
+    );
+    const azureHome = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "azure-home-"));
+    directories.push(sandbox, azureHome);
+    await NodeFSP.mkdir(NodePath.join(sandbox, "focused"), { recursive: true });
+    await NodeFSP.writeFile(NodePath.join(sandbox, "focused", "SKILL.md"), "focused");
+    await NodeFSP.mkdir(NodePath.join(azureHome, "skills"), { recursive: true });
+    await NodeFSP.symlink(
+      NodePath.join(sandbox, "focused"),
+      NodePath.join(azureHome, "skills", "focused"),
+    );
+    // Symlink target realpath lives in `<homedir>/.azure`, which is a default
+    // trusted root so worktrees can share capability dirs with the canonical
+    // Azure home via symlinks (e.g. `<worktree>/.azure/skills -> ~/.azure/skills`).
+    await expect(discoverAzureHomeCapabilities(azureHome)).resolves.toMatchObject({
+      homeStatus: "available",
+      skills: [{ id: "focused", detail: "Available" }],
+    });
+  });
+
   it("persists skill toggles and exposes only enabled skill paths", async () => {
     const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "azure-home-"));
     directories.push(home);
