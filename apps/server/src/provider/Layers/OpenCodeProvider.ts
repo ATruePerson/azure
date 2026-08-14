@@ -288,11 +288,13 @@ function openCodeSlashCommands(
     }
     const description = nonEmptyTrimmed(command.description);
     const hint = command.hints?.map(nonEmptyTrimmed).find((value) => value !== undefined);
+    const source = nonEmptyTrimmed(command.source);
     return [
       {
         name,
         ...(description ? { description } : {}),
         ...(hint ? { input: { hint } } : {}),
+        ...(source ? { source } : {}),
       },
     ];
   });

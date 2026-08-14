@@ -92,13 +92,18 @@ function groupCommandItems(
 
   const builtInItems = items.filter((item) => item.type === "slash-command");
   const providerItems = items.filter((item) => item.type === "provider-slash-command");
+  const pluginItems = providerItems.filter((item) => item.command.source === "plugin");
+  const builtInProviderItems = providerItems.filter((item) => item.command.source !== "plugin");
 
   const groups: ComposerCommandGroup[] = [];
   if (builtInItems.length > 0) {
     groups.push({ id: "built-in", label: "Built-in", items: builtInItems });
   }
-  if (providerItems.length > 0) {
-    groups.push({ id: "provider", label: "Provider", items: providerItems });
+  if (builtInProviderItems.length > 0) {
+    groups.push({ id: "provider", label: "Provider", items: builtInProviderItems });
+  }
+  if (pluginItems.length > 0) {
+    groups.push({ id: "plugins", label: "Plugins", items: pluginItems });
   }
   return groups;
 }

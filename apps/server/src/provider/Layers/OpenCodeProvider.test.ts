@@ -229,7 +229,7 @@ it.layer(testLayer)("checkOpenCodeProviderStatus", (it) => {
         },
       ]);
       NodeAssert.deepEqual(snapshot.slashCommands, [
-        { name: "review", description: "Review the diff" },
+        { name: "review", description: "Review the diff", source: "command" },
       ]);
     }),
   );
