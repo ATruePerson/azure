@@ -11,7 +11,7 @@ import {
   squashAtomCommandFailure,
 } from "@azure/client-runtime/state/runtime";
 import type { ChangeRequestStateLike } from "@azure/client-runtime/state/thread-settled";
-import { ChevronDownIcon } from "lucide-react";
+import { CalendarClockIcon, ChevronDownIcon } from "lucide-react";
 import {
   memo,
   useCallback,
@@ -21,6 +21,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import GitActionsControl from "../GitActionsControl";
 import { type DraftId } from "~/composerDraftStore";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -31,7 +32,7 @@ import ProjectScriptsControl, {
 } from "../ProjectScriptsControl";
 import { OpenInPicker } from "./OpenInPicker";
 import { usePrimaryEnvironmentId } from "../../state/environments";
-import { useT3ProjectFileScripts } from "~/hooks/useT3ProjectFileScripts";
+import { useAzureProjectFileScripts } from "~/hooks/useAzureProjectFileScripts";
 import { useThreadActionMenu } from "~/hooks/useThreadActionMenu";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -115,7 +116,7 @@ export const ChatHeader = memo(function ChatHeader({
   onDeleteProjectScript,
 }: ChatHeaderProps) {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const fileScripts = useT3ProjectFileScripts(
+  const fileScripts = useAzureProjectFileScripts(
     activeThreadEnvironmentId,
     activeProjectScripts ? activeProjectCwd : null,
   );
@@ -131,6 +132,7 @@ export const ChatHeader = memo(function ChatHeader({
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
+  const navigate = useNavigate();
   // Inline rename, keyed by thread: navigating away drops an in-progress
   // rename instead of committing stale text. Cleared on thread change (not
   // just hidden) so returning to the thread doesn't revive the old draft.
@@ -240,6 +242,26 @@ export const ChatHeader = memo(function ChatHeader({
             </span>
           </span>
         ) : null}
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                aria-label="Schedule Task"
+                onClick={() => void navigate({ to: "/settings/scheduled-tasks" })}
+                className="inline-flex min-w-0 cursor-pointer items-center gap-1.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <CalendarClockIcon className="size-3.5" />
+              </button>
+            }
+          >
+            <CalendarClockIcon className="size-3.5" />
+          </TooltipTrigger>
+          <TooltipPopup side="top">Schedule Task</TooltipPopup>
+        </Tooltip>
+        <span aria-hidden className="text-icon-muted">
+          /
+        </span>
         {renamingTitle !== null ? (
           <input
             autoFocus

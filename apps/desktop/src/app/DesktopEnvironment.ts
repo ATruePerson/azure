@@ -84,7 +84,7 @@ export class DesktopEnvironment extends Context.Service<
   }
 >()("@azure/desktop/app/DesktopEnvironment") {}
 
-const APP_BASE_NAME = "Azure Code";
+const APP_BASE_NAME = "Azure";
 
 function resolveDesktopAppStageLabel(input: {
   readonly isDevelopment: boolean;
@@ -182,8 +182,8 @@ const make = Effect.fn("desktop.environment.make")(function* (
     joinPath: path.join,
     t3Home: config.t3Home,
   });
-  const userDataDirName = isDevelopment ? "azure-code-dev" : "azure-code";
-  const legacyUserDataDirName = isDevelopment ? "Azure Code (Dev)" : "Azure Code (Alpha)";
+  const userDataDirName = isDevelopment ? "azure-dev" : "azure";
+  const legacyUserDataDirName = isDevelopment ? "Azure (Dev)" : "Azure (Alpha)";
   const linuxApplicationsDir = path.join(
     Option.getOrElse(config.xdgDataHome, () => path.join(homeDirectory, ".local", "share")),
     "applications",
@@ -227,10 +227,10 @@ const make = Effect.fn("desktop.environment.make")(function* (
     branding,
     displayName,
     appUserModelId: Option.getOrElse(config.appUserModelIdOverride, () =>
-      isDevelopment ? "com.atrueperson.azurecode.dev" : "com.atrueperson.azurecode",
+      isDevelopment ? "com.atrueperson.azure.dev" : "com.atrueperson.azure",
     ),
-    linuxDesktopEntryName: isDevelopment ? "azure-code-dev.desktop" : "azure-code.desktop",
-    linuxWmClass: isDevelopment ? "azure-code-dev" : "azure-code",
+    linuxDesktopEntryName: isDevelopment ? "azure-dev.desktop" : "azure.desktop",
+    linuxWmClass: isDevelopment ? "azure-dev" : "azure",
     linuxApplicationsDir,
     appImagePath: config.appImagePath,
     userDataDirName,

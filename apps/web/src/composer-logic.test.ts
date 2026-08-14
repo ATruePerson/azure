@@ -94,6 +94,54 @@ describe("detectComposerTrigger", () => {
     });
   });
 
+  it("detects slash command after a space anywhere in text", () => {
+    const text = "hello /mo";
+    const trigger = detectComposerTrigger(text, text.length);
+
+    expect(trigger).toEqual({
+      kind: "slash-command",
+      query: "mo",
+      rangeStart: "hello ".length,
+      rangeEnd: text.length,
+    });
+  });
+
+  it("detects slash command after newline", () => {
+    const text = "hello\n/mo";
+    const trigger = detectComposerTrigger(text, text.length);
+
+    expect(trigger).toEqual({
+      kind: "slash-command",
+      query: "mo",
+      rangeStart: "hello\n".length,
+      rangeEnd: text.length,
+    });
+  });
+
+  it("detects slash command after multiple spaces", () => {
+    const text = "hello  /mo";
+    const trigger = detectComposerTrigger(text, text.length);
+
+    expect(trigger).toEqual({
+      kind: "slash-command",
+      query: "mo",
+      rangeStart: "hello  ".length,
+      rangeEnd: text.length,
+    });
+  });
+
+  it("detects slash command after tab", () => {
+    const text = "hello\t/mo";
+    const trigger = detectComposerTrigger(text, text.length);
+
+    expect(trigger).toEqual({
+      kind: "slash-command",
+      query: "mo",
+      rangeStart: "hello\t".length,
+      rangeEnd: text.length,
+    });
+  });
+
   it("detects $skill trigger at cursor", () => {
     const text = "Use $gh-fi";
     const trigger = detectComposerTrigger(text, text.length);

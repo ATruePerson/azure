@@ -1,14 +1,14 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import { T3ProjectFile } from "./t3ProjectFile.ts";
+import { AzureProjectFile } from "./azureProjectFile.ts";
 
-const decode = Schema.decodeUnknownSync(T3ProjectFile);
+const decode = Schema.decodeUnknownSync(AzureProjectFile);
 
-describe("T3ProjectFile", () => {
+describe("AzureProjectFile", () => {
   it("decodes a full project file", () => {
     const decoded = decode({
-      $schema: "https://azure.codes/schema/t3.json",
+      $schema: "https://azure.codes/schema/azure.json",
       iconPath: "assets/logo.svg",
       scripts: [
         {

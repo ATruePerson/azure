@@ -227,14 +227,24 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
   const lineStart = text.lastIndexOf("\n", Math.max(0, cursor - 1)) + 1;
   const linePrefix = text.slice(lineStart, cursor);
 
-  if (linePrefix.startsWith("/")) {
-    const commandMatch = /^\/(\S*)$/.exec(linePrefix);
+  // Check for slash command at line start OR after a space/tab/newline anywhere in the text
+  const beforeCursor = text.slice(0, cursor);
+  const lastSpaceOrStart =
+    Math.max(
+      beforeCursor.lastIndexOf(" "),
+      beforeCursor.lastIndexOf("\t"),
+      beforeCursor.lastIndexOf("\n"),
+    ) + 1;
+  const tokenPrefix = beforeCursor.slice(lastSpaceOrStart);
+
+  if (tokenPrefix.startsWith("/")) {
+    const commandMatch = /^\/(\S*)$/.exec(tokenPrefix);
     if (commandMatch) {
       const commandQuery = commandMatch[1] ?? "";
       return {
         kind: "slash-command",
         query: commandQuery,
-        rangeStart: lineStart,
+        rangeStart: lastSpaceOrStart,
         rangeEnd: cursor,
       };
     }

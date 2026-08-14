@@ -6,10 +6,11 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
-import * as T3ProjectFileLoader from "./T3ProjectFileLoader.ts";
+import { AZURE_PROJECT_FILE_NAME } from "@azure/contracts";
+import * as AzureProjectFileLoader from "./AzureProjectFileLoader.ts";
 
 const TestLayer = Layer.empty.pipe(
-  Layer.provideMerge(T3ProjectFileLoader.layer),
+  Layer.provideMerge(AzureProjectFileLoader.layer),
   Layer.provideMerge(NodeServices.layer),
 );
 
@@ -23,14 +24,16 @@ const makeTempDir = Effect.gen(function* () {
 const writeProjectFile = Effect.fn("writeProjectFile")(function* (cwd: string, contents: string) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  yield* fileSystem.writeFileString(path.join(cwd, "t3.json"), contents).pipe(Effect.orDie);
+  yield* fileSystem
+    .writeFileString(path.join(cwd, AZURE_PROJECT_FILE_NAME), contents)
+    .pipe(Effect.orDie);
 });
 
-it.layer(TestLayer)("T3ProjectFileLoader", (it) => {
+it.layer(TestLayer)("AzureProjectFileLoader", (it) => {
   describe("load", () => {
-    it.effect("loads and decodes a valid t3.json", () =>
+    it.effect("loads and decodes a valid azure.json", () =>
       Effect.gen(function* () {
-        const loader = yield* T3ProjectFileLoader.T3ProjectFileLoader;
+        const loader = yield* AzureProjectFileLoader.AzureProjectFileLoader;
         const cwd = yield* makeTempDir;
         yield* writeProjectFile(
           cwd,
@@ -51,9 +54,9 @@ it.layer(TestLayer)("T3ProjectFileLoader", (it) => {
       }),
     );
 
-    it.effect("returns none when t3.json is missing", () =>
+    it.effect("returns none when azure.json is missing", () =>
       Effect.gen(function* () {
-        const loader = yield* T3ProjectFileLoader.T3ProjectFileLoader;
+        const loader = yield* AzureProjectFileLoader.AzureProjectFileLoader;
         const cwd = yield* makeTempDir;
 
         const loaded = yield* loader.load(cwd);
@@ -64,7 +67,7 @@ it.layer(TestLayer)("T3ProjectFileLoader", (it) => {
 
     it.effect("returns none for malformed JSON without failing", () =>
       Effect.gen(function* () {
-        const loader = yield* T3ProjectFileLoader.T3ProjectFileLoader;
+        const loader = yield* AzureProjectFileLoader.AzureProjectFileLoader;
         const cwd = yield* makeTempDir;
         yield* writeProjectFile(cwd, "{ not json");
 
@@ -76,7 +79,7 @@ it.layer(TestLayer)("T3ProjectFileLoader", (it) => {
 
     it.effect("returns none for schema-invalid files without failing", () =>
       Effect.gen(function* () {
-        const loader = yield* T3ProjectFileLoader.T3ProjectFileLoader;
+        const loader = yield* AzureProjectFileLoader.AzureProjectFileLoader;
         const cwd = yield* makeTempDir;
         yield* writeProjectFile(cwd, '{ "scripts": [{ "name": "Dev" }] }');
 

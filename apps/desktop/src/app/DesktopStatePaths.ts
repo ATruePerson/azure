@@ -2,7 +2,7 @@ import * as Option from "effect/Option";
 
 export type JoinPath = (first: string, ...segments: string[]) => string;
 
-export const DESKTOP_BASE_DIR_NAME = ".azure-code";
+export const DESKTOP_BASE_DIR_NAME = ".azure";
 export const LEGACY_DESKTOP_BASE_DIR_NAME = ".azure";
 
 function normalizeConfiguredBaseDir(t3Home: Option.Option<string>): Option.Option<string> {

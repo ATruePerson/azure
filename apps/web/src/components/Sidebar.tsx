@@ -54,6 +54,7 @@ import {
   Trash2Icon,
   Undo2Icon,
   XIcon,
+  CalendarClockIcon,
 } from "lucide-react";
 import {
   memo,
@@ -66,7 +67,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
-import { useParams, useRouter } from "@tanstack/react-router";
+import { useNavigate, useParams, useRouter } from "@tanstack/react-router";
 
 import {
   isAtomCommandInterrupted,
@@ -1379,6 +1380,7 @@ export default function Sidebar() {
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
+  const navigate = useNavigate();
   const deleteProject = useAtomCommand(projectEnvironment.delete, {
     reportFailure: false,
   });
@@ -3098,6 +3100,24 @@ export default function Sidebar() {
                   </TooltipPopup>
                 </Tooltip>
               </div>
+            </div>
+            <div className="shrink-0">
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <SidebarMenuButton
+                      size="icon"
+                      type="button"
+                      className="relative focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+                      onClick={() => void navigate({ to: "/settings/scheduled-tasks" })}
+                      aria-label="Schedule Task"
+                    />
+                  }
+                >
+                  <CalendarClockIcon className="size-4" />
+                </TooltipTrigger>
+                <TooltipPopup side="right">Schedule Task</TooltipPopup>
+              </Tooltip>
             </div>
             {projectGroups.length > 0 ? (
               <div className="flex items-center gap-1">

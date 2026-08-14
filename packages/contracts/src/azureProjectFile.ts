@@ -3,14 +3,14 @@ import * as SchemaTransformation from "effect/SchemaTransformation";
 
 import { ProjectScriptIcon } from "./orchestration.ts";
 
-/** File name of the checked-in T3 project file, resolved at the workspace root. */
-export const T3_PROJECT_FILE_NAME = "t3.json";
+/** File name of the checked-in Azure project file, resolved at the workspace root. */
+export const AZURE_PROJECT_FILE_NAME = "azure.json";
 
-/** Public URL of the published JSON Schema for {@link T3ProjectFile}. */
-export const T3_PROJECT_FILE_SCHEMA_URL = "https://azure.codes/schema/t3.json";
+/** Public URL of the published JSON Schema for {@link AzureProjectFile}. */
+export const AZURE_PROJECT_FILE_SCHEMA_URL = "https://azure.codes/schema/azure.json";
 
-const T3_PROJECT_FILE_PATH_MAX_LENGTH = 512;
-const T3_PROJECT_FILE_MAX_SCRIPTS = 50;
+const AZURE_PROJECT_FILE_PATH_MAX_LENGTH = 512;
+const AZURE_PROJECT_FILE_MAX_SCRIPTS = 50;
 
 // Annotations go on the encoded (string) side so they survive into the
 // published JSON Schema; decoding still trims and re-validates non-emptiness.
@@ -23,7 +23,7 @@ const trimmedNonEmpty = (annotations: { readonly description: string }, maxLengt
   return encoded.pipe(Schema.decodeTo(encoded, SchemaTransformation.trim()));
 };
 
-export const T3ProjectFileScript = Schema.Struct({
+export const AzureProjectFileScript = Schema.Struct({
   name: trimmedNonEmpty({
     description: "Display name for the script, shown in the Azure Code scripts menu.",
   }),
@@ -56,12 +56,12 @@ export const T3ProjectFileScript = Schema.Struct({
 }).annotate({
   description: "A project script that team members can import into Azure Code.",
 });
-export type T3ProjectFileScript = typeof T3ProjectFileScript.Type;
+export type AzureProjectFileScript = typeof AzureProjectFileScript.Type;
 
-export const T3ProjectFile = Schema.Struct({
+export const AzureProjectFile = Schema.Struct({
   $schema: Schema.optionalKey(
     Schema.String.annotate({
-      description: `URL of the JSON Schema for this file, typically "${T3_PROJECT_FILE_SCHEMA_URL}".`,
+      description: `URL of the JSON Schema for this file, typically "${AZURE_PROJECT_FILE_SCHEMA_URL}".`,
     }),
   ),
   iconPath: Schema.optionalKey(
@@ -70,20 +70,20 @@ export const T3ProjectFile = Schema.Struct({
         description:
           'Workspace-relative path to the project icon (e.g. "assets/logo.svg"). Checked before Azure Code\'s built-in icon locations.',
       },
-      T3_PROJECT_FILE_PATH_MAX_LENGTH,
+      AZURE_PROJECT_FILE_PATH_MAX_LENGTH,
     ),
   ),
   scripts: Schema.optionalKey(
-    Schema.Array(T3ProjectFileScript)
+    Schema.Array(AzureProjectFileScript)
       .annotate({
         description:
           "Project scripts shared with everyone who opens this repository in Azure Code.",
       })
-      .check(Schema.isMaxLength(T3_PROJECT_FILE_MAX_SCRIPTS)),
+      .check(Schema.isMaxLength(AZURE_PROJECT_FILE_MAX_SCRIPTS)),
   ),
 }).annotate({
-  title: "T3 project file",
+  title: "Azure project file",
   description:
-    "Checked-in project configuration for Azure Code (t3.json at the repository root). See https://azure.codes for documentation.",
+    "Checked-in project configuration for Azure Code (azure.json at the repository root). See https://azure.codes for documentation.",
 });
-export type T3ProjectFile = typeof T3ProjectFile.Type;
+export type AzureProjectFile = typeof AzureProjectFile.Type;
