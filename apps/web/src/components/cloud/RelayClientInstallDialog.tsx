@@ -69,8 +69,8 @@ export function RelayClientInstallDialog() {
           </DialogTitle>
           <DialogDescription>
             {isInstalling
-              ? "Azure Code is preparing this environment for secure access through Azure Connect."
-              : "Azure Code needs the relay client to make this environment available through Azure Connect."}
+              ? "Azure is preparing this environment for secure access through Azure Connect."
+              : "Azure needs the relay client to make this environment available through Azure Connect."}
           </DialogDescription>
         </DialogHeader>
         <DialogPanel scrollFade={false}>
@@ -91,14 +91,14 @@ export function RelayClientInstallDialog() {
                 value={activeStepIndex + 1}
               />
               <p className="text-xs leading-relaxed text-muted-foreground">
-                Keep Azure Code open while the relay client is installed.
+                Keep Azure open while the relay client is installed.
               </p>
             </div>
           ) : (
             <div className="rounded-xl border border-border/70 bg-muted/35 p-3">
               <p className="text-sm font-medium text-foreground">Managed relay client</p>
               <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                Azure Code will download and install version{" "}
+                Azure will download and install version{" "}
                 {view.status === "confirming" ? view.version : ""} locally.
               </p>
             </div>

@@ -45,7 +45,7 @@ export function CompactBrandTitle(
   return (
     <View
       aria-level={1}
-      accessibilityLabel="Azure Code, Threads"
+      accessibilityLabel="Azure, Threads"
       accessible
       role="heading"
       style={{

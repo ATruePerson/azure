@@ -96,7 +96,7 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
 function AzureMark() {
   return (
     <svg
-      aria-label="Azure Code"
+      aria-label="Azure"
       className="size-3.5 shrink-0"
       fill="none"
       role="img"

@@ -67,7 +67,7 @@ export function ScheduledTasksSettings() {
           <CalendarClockIcon className="size-5" /> Scheduled Tasks
         </h1>
         <p className="text-sm text-muted-foreground">
-          Run prompts while Azure Code is running and the Mac is awake.
+          Run prompts while Azure is running and the Mac is awake.
         </p>
       </div>
       <SettingsSection title="Active">

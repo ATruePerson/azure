@@ -58,8 +58,8 @@ function patchPackagedMacBundle(appBundlePath: string): void {
     if (insert.status !== 0) throw new Error(`Failed to patch packaged plist ${plistPath}.`);
   };
   const mainPlist = NodePath.join(appBundlePath, "Contents", "Info.plist");
-  setPlist(mainPlist, "CFBundleDisplayName", "string", "Azure Code");
-  setPlist(mainPlist, "CFBundleName", "string", "Azure Code");
+  setPlist(mainPlist, "CFBundleDisplayName", "string", "Azure");
+  setPlist(mainPlist, "CFBundleName", "string", "Azure");
   const frameworks = NodePath.join(appBundlePath, "Contents", "Frameworks");
   if (!NodeFS.existsSync(frameworks)) return;
   for (const entry of NodeFS.readdirSync(frameworks)) {

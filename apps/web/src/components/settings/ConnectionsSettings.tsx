@@ -2865,7 +2865,7 @@ export function ConnectionsSettings() {
         {desktopWslState.enabled ? (
           <SettingsRow
             title="WSL only"
-            description="Stop the Windows backend and run only the WSL backend. Useful if you develop entirely inside WSL and don't want a second backend process. Azure Code restarts when you change this."
+            description="Stop the Windows backend and run only the WSL backend. Useful if you develop entirely inside WSL and don't want a second backend process. Azure restarts when you change this."
             className="bg-muted/20 pl-7 sm:pl-8"
             control={
               <Switch
@@ -3096,8 +3096,8 @@ export function ConnectionsSettings() {
                 </AlertDialogTitle>
                 <AlertDialogDescription>
                   {pendingDesktopServerExposureMode === "network-accessible"
-                    ? "Azure Code will restart to expose this environment over the network."
-                    : "Azure Code will restart and limit this environment back to this machine."}
+                    ? "Azure will restart to expose this environment over the network."
+                    : "Azure will restart and limit this environment back to this machine."}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -3155,15 +3155,15 @@ export function ConnectionsSettings() {
                 <AlertDialogDescription>
                   {pendingWslChange?.kind === "disable"
                     ? pendingWslChange.wasWslOnly
-                      ? "Azure Code will restart on the Windows backend. Threads and projects opened against WSL stay safe inside the distro and become available again when you re-enable WSL."
-                      : "The WSL backend will stop. Threads and projects opened against WSL stay safe inside the distro, but they'll be unavailable in Azure Code until you re-enable WSL."
+                      ? "Azure will restart on the Windows backend. Threads and projects opened against WSL stay safe inside the distro and become available again when you re-enable WSL."
+                      : "The WSL backend will stop. Threads and projects opened against WSL stay safe inside the distro, but they'll be unavailable in Azure until you re-enable WSL."
                     : pendingWslChange?.kind === "distro"
-                      ? "Azure Code will restart the WSL backend on the new distro. Sessions still running on the current distro will be interrupted."
+                      ? "Azure will restart the WSL backend on the new distro. Sessions still running on the current distro will be interrupted."
                       : pendingWslChange?.kind === "enable"
                         ? "Run the WSL backend alongside the Windows one, or stop the Windows backend and use only WSL? You can change this later from Settings."
                         : pendingWslChange?.nextValue
-                          ? "Azure Code will restart and start only the WSL backend. Your Windows-side projects won't be accessible until you turn this off again."
-                          : "Azure Code will restart and bring the Windows backend back up alongside WSL."}
+                          ? "Azure will restart and start only the WSL backend. Your Windows-side projects won't be accessible until you turn this off again."
+                          : "Azure will restart and bring the Windows backend back up alongside WSL."}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -3249,7 +3249,7 @@ export function ConnectionsSettings() {
               <AlertDialogHeader>
                 <AlertDialogTitle>Disable Tailscale HTTPS?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Azure Code will restart the local backend without Tailscale Serve.
+                  Azure will restart the local backend without Tailscale Serve.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -3287,7 +3287,7 @@ export function ConnectionsSettings() {
               <DialogHeader>
                 <DialogTitle>Set up Tailscale HTTPS?</DialogTitle>
                 <DialogDescription>
-                  Azure Code will restart the local backend with Tailscale Serve enabled and ask
+                  Azure will restart the local backend with Tailscale Serve enabled and ask
                   Tailscale to proxy HTTPS traffic to this backend.
                 </DialogDescription>
               </DialogHeader>

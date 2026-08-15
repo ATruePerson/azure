@@ -39,8 +39,7 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
     return {
       headline: "Disabled",
       detail:
-        provider.message ??
-        "This provider is installed but disabled for new sessions in Azure Code.",
+        provider.message ?? "This provider is installed but disabled for new sessions in Azure.",
     };
   }
   if (!provider.installed) {

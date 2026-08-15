@@ -117,7 +117,7 @@ function ChatRouteGlobalShortcuts() {
             stackedThreadToast({
               type: "info",
               title: "Preview is desktop-only",
-              description: "Open Azure Code in the desktop app to use the in-app preview.",
+              description: "Open Azure in the desktop app to use the in-app preview.",
             }),
           );
           return;

@@ -1,5 +1,5 @@
 {
-  "$schema": "https://azure.codes/schema/t3.json",
+  "$schema": "https://azure.codes/schema/azure.json",
   "iconPath": "assets/dev/blueprint-web-apple-touch-180.png",
   "scripts": [
     {

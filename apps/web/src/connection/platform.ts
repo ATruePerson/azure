@@ -117,7 +117,7 @@ function clientMetadata() {
   const desktop = window.desktopBridge !== undefined;
   const platform = navigator.platform.trim();
   return {
-    label: desktop ? "Azure Code Desktop" : "Azure Code Web",
+    label: desktop ? "Azure Desktop" : "Azure Web",
     deviceType: "desktop" as const,
     ...(platform === "" ? {} : { os: platform }),
   };

@@ -128,7 +128,7 @@ const handleFatalStartupError = Effect.fn("desktop.startup.handleFatalStartupErr
   const wasQuitting = yield* Ref.getAndSet(state.quitting, true);
   if (!wasQuitting) {
     yield* electronDialog.showErrorBox(
-      "Azure Code failed to start",
+      "Azure failed to start",
       `Stage: ${stage}\n${message}${detail}`,
     );
   }
@@ -203,7 +203,7 @@ const bootstrap = Effect.gen(function* () {
   if (!(yield* Ref.get(state.quitting))) {
     // Backend readiness is asynchronous and retries after failures. Show the
     // existing local splash for every startup so a slow or retrying backend
-    // never leaves Azure Code running without a visible window.
+    // never leaves Azure running without a visible window.
     yield* desktopWindow.showConnectingSplash;
     yield* primaryBackend.start;
     yield* logBootstrapInfo("bootstrap backend start requested");

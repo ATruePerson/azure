@@ -96,8 +96,7 @@ function EmptyMobileClients() {
       <EmptyHeader>
         <EmptyTitle>No mobile clients</EmptyTitle>
         <EmptyDescription>
-          Sign in to Azure Code on your iPhone to register it for push notifications and Live
-          Activities.
+          Sign in to Azure on your iPhone to register it for push notifications and Live Activities.
         </EmptyDescription>
       </EmptyHeader>
     </Empty>
