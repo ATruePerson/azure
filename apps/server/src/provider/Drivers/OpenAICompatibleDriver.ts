@@ -167,6 +167,42 @@ function modelCapabilities(
         functionToolSupport: "verified",
       });
     }
+    if (normalizedId === "moonshotai/kimi-k3") {
+      return createModelCapabilities({
+        optionDescriptors: [
+          {
+            id: "reasoningEffort",
+            label: "Reasoning effort",
+            type: "select",
+            options: [
+              { id: "low", label: "Low" },
+              { id: "high", label: "High" },
+              { id: "max", label: "Max", isDefault: true },
+            ],
+          },
+        ],
+        contextWindowTokens: contextWindowTokens ?? 1_048_576,
+        functionToolSupport: "verified",
+      });
+    }
+    if (normalizedId === "deepseek-ai/deepseek-v4-flash-0731") {
+      return createModelCapabilities({
+        optionDescriptors: [
+          {
+            id: "reasoningEffort",
+            label: "Reasoning effort",
+            type: "select",
+            options: [
+              { id: "low", label: "Low" },
+              { id: "high", label: "High", isDefault: true },
+              { id: "max", label: "Max" },
+            ],
+          },
+        ],
+        contextWindowTokens: contextWindowTokens ?? 1_000_000,
+        functionToolSupport: "verified",
+      });
+    }
     if (normalizedId.includes("gpt-oss")) {
       return createModelCapabilities({
         optionDescriptors: [

@@ -103,7 +103,12 @@ describe("OpenAI-compatible drivers", () => {
         clientFor(
           (request) =>
             json({
-              data: [{ id: "nvidia/model-a" }, { id: "nvidia/nemotron-3-ultra-550b-a55b" }],
+              data: [
+                { id: "nvidia/model-a" },
+                { id: "nvidia/nemotron-3-ultra-550b-a55b" },
+                { id: "moonshotai/kimi-k3" },
+                { id: "deepseek-ai/deepseek-v4-flash-0731" },
+              ],
             }),
           requests,
         ),
@@ -120,6 +125,28 @@ describe("OpenAI-compatible drivers", () => {
           { id: "none", label: "None" },
           { id: "medium", label: "Medium" },
           { id: "high", label: "High", isDefault: true },
+        ]);
+      }
+
+      assert.equal(healthy.models[2]?.capabilities?.contextWindowTokens, 1_048_576);
+      const kimiReasoning = healthy.models[2]?.capabilities?.optionDescriptors?.[0];
+      assert.equal(kimiReasoning?.type, "select");
+      if (kimiReasoning?.type === "select") {
+        assert.deepStrictEqual(kimiReasoning.options, [
+          { id: "low", label: "Low" },
+          { id: "high", label: "High" },
+          { id: "max", label: "Max", isDefault: true },
+        ]);
+      }
+
+      assert.equal(healthy.models[3]?.capabilities?.contextWindowTokens, 1_000_000);
+      const deepseekReasoning = healthy.models[3]?.capabilities?.optionDescriptors?.[0];
+      assert.equal(deepseekReasoning?.type, "select");
+      if (deepseekReasoning?.type === "select") {
+        assert.deepStrictEqual(deepseekReasoning.options, [
+          { id: "low", label: "Low" },
+          { id: "high", label: "High", isDefault: true },
+          { id: "max", label: "Max" },
         ]);
       }
       assert.equal(requests[0]?.url, "https://integrate.api.nvidia.com/v1/models");

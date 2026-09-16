@@ -1,9 +1,9 @@
 import type { DesktopUpdateActionResult, DesktopUpdateState } from "@azure/contracts";
 import { isWindowsPlatform } from "../lib/utils";
 
-export type DesktopUpdateButtonAction = "download" | "install" | "none";
+export type DesktopUpdateButtonAction = "download" | "install" | "check" | "none";
 
-const DESKTOP_RELEASE_TAG_URL = "https://github.com/pingdotgg/azure/releases/tag";
+const DESKTOP_RELEASE_TAG_URL = "https://github.com/ATruePerson/azure/releases/tag";
 
 /**
  * The main process fills `downloadedVersion` from the updater's `update-downloaded`
@@ -35,17 +35,11 @@ export function resolveDesktopUpdateButtonAction(
       return "download";
     }
   }
-  return "none";
+  return "check";
 }
 
 export function shouldShowDesktopUpdateButton(state: DesktopUpdateState | null): boolean {
-  if (!state || !state.enabled) {
-    return false;
-  }
-  if (state.status === "downloading") {
-    return true;
-  }
-  return resolveDesktopUpdateButtonAction(state) !== "none";
+  return state !== null;
 }
 
 export function shouldShowArm64IntelBuildWarning(state: DesktopUpdateState | null): boolean {
@@ -92,7 +86,8 @@ export function getDesktopUpdateButtonTooltip(state: DesktopUpdateState): string
     }
     return state.message ?? "Update failed";
   }
-  return "Up to date";
+  if (state.status === "checking") return "Checking for updates";
+  return "Check for updates";
 }
 
 export function getDesktopUpdateInstallConfirmationMessage(

@@ -1,4 +1,4 @@
-export const GITHUB_REPOSITORY_URL = "https://github.com/pingdotgg/azure";
+export const GITHUB_REPOSITORY_URL = "https://github.com/ATruePerson/azure";
 
 export const IOS_APP_STORE_URL =
   "https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824";

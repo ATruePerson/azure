@@ -38,6 +38,7 @@ node_modules/
 !.env.example
 /AGENTS.md
 /CLAUDE.md
+/GEMINI.md
 /.codex/
 /.claude/
 /.pnpm-store/

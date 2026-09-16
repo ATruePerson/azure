@@ -92,10 +92,16 @@ function groupCommandItems(
 
   const builtInItems = items.filter((item) => item.type === "slash-command");
   const providerItems = items.filter((item) => item.type === "provider-slash-command");
+  const agentItems = providerItems.filter((item) => item.command.source === "agent");
   const pluginItems = providerItems.filter((item) => item.command.source === "plugin");
-  const builtInProviderItems = providerItems.filter((item) => item.command.source !== "plugin");
+  const builtInProviderItems = providerItems.filter(
+    (item) => item.command.source !== "plugin" && item.command.source !== "agent",
+  );
 
   const groups: ComposerCommandGroup[] = [];
+  if (agentItems.length > 0) {
+    groups.push({ id: "agents", label: "Agents", items: agentItems });
+  }
   if (builtInItems.length > 0) {
     groups.push({ id: "built-in", label: "Built-in", items: builtInItems });
   }
@@ -243,9 +249,13 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
         <BotIcon className="size-4 shrink-0 text-icon-muted" />
       ) : null}
       {props.item.type === "provider-slash-command" ? (
-        <span className="inline-flex size-4 shrink-0 items-center justify-center text-icon-muted">
-          <SkillGlyph className="size-3.5" />
-        </span>
+        props.item.command.source === "agent" ? (
+          <BotIcon className="size-4 shrink-0 text-fuchsia-400" />
+        ) : (
+          <span className="inline-flex size-4 shrink-0 items-center justify-center text-icon-muted">
+            <SkillGlyph className="size-3.5" />
+          </span>
+        )
       ) : null}
       {props.item.type === "skill" ? (
         <span className="inline-flex size-4 shrink-0 items-center justify-center text-icon-muted">
@@ -258,6 +268,11 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
           {props.item.description}
         </span>
       </span>
+      {props.item.type === "provider-slash-command" && props.item.command.source === "agent" ? (
+        <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium tracking-wide bg-fuchsia-500/15 text-fuchsia-400 border border-fuchsia-500/25">
+          Agent
+        </span>
+      ) : null}
       {skillSourceLabel ? (
         <span className="shrink-0 pl-2 text-secondary-label text-xs">{skillSourceLabel}</span>
       ) : null}

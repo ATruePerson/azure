@@ -1563,7 +1563,13 @@ const makeWsRpcLayer = (
           observeRpcEffect(
             WS_METHODS.serverSetAzureCapabilityEnabled,
             Effect.promise(() =>
-              setAzureHomeCapabilityEnabled(input.kind, input.id, input.enabled),
+              setAzureHomeCapabilityEnabled(
+                input.kind,
+                input.id,
+                input.enabled,
+                undefined,
+                input.projectRoots,
+              ),
             ).pipe(
               Effect.tap(() =>
                 input.kind === "skills" ? providerRegistry.refresh() : Effect.void,

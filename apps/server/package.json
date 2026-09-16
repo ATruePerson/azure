@@ -4,7 +4,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pingdotgg/azure",
+    "url": "https://github.com/ATruePerson/azure",
     "directory": "apps/server"
   },
   "bin": {

@@ -32,6 +32,7 @@ export const CodexCapabilityItem = Schema.Struct({
     }),
   ),
   canToggle: Schema.Boolean,
+  projectRoots: Schema.optional(Schema.Array(Schema.String)),
 });
 export type CodexCapabilityItem = typeof CodexCapabilityItem.Type;
 
@@ -69,6 +70,7 @@ export const AzureCapabilityEnabledInput = Schema.Struct({
   kind: AzureCapabilityKind,
   id: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/)),
   enabled: Schema.Boolean,
+  projectRoots: Schema.optional(Schema.Array(Schema.String)),
 });
 export type AzureCapabilityEnabledInput = typeof AzureCapabilityEnabledInput.Type;
 

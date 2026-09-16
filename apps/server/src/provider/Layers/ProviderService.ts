@@ -1014,7 +1014,10 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           ...(input.input ? { prompt: input.input } : {}),
         });
         const explicitSkills = yield* Effect.tryPromise(() =>
-          resolveAzureExplicitSkills({ prompt: input.input }),
+          resolveAzureExplicitSkills({
+            prompt: input.input,
+            ...(routed.cwd ? { cwd: routed.cwd } : {}),
+          }),
         ).pipe(
           Effect.mapError((cause) =>
             toValidationError(
@@ -1041,6 +1044,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
               prompt: promptWithPortableContext || input.input,
               ...(memoryCommand ? { memoryCommand } : {}),
               includeProjectInstructions: reservedAzureProjectInstructions !== null,
+              includeCapabilitiesCatalog: reservedAzureProjectInstructions !== null,
             }),
           ).pipe(Effect.orElseSucceed(() => promptWithPortableContext || input.input)),
         };

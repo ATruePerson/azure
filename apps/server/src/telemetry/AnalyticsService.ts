@@ -119,6 +119,7 @@ export const make = Effect.gen(function* () {
           platform: hostPlatform,
           wsl: Option.getOrUndefined(telemetryConfig.wslDistroName),
           arch: hostArchitecture,
+          azureVersion: packageJson.version,
           t3CodeVersion: packageJson.version,
           clientType,
         },

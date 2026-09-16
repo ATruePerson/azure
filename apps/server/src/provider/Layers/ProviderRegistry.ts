@@ -42,8 +42,10 @@ import * as Semaphore from "effect/Semaphore";
 
 import { ServerConfig } from "../../config.ts";
 import {
+  discoverEnabledAzureProviderAgents,
   discoverEnabledAzureProviderSkills,
   mergeAzureProviderSkills,
+  mergeAzureProviderSlashCommands,
 } from "../AzureHomeCapabilities.ts";
 import { ProviderInstanceRegistry } from "../Services/ProviderInstanceRegistry.ts";
 import { ProviderRegistry, type ProviderRegistryShape } from "../Services/ProviderRegistry.ts";
@@ -192,10 +194,17 @@ const correlateSnapshotWithSource = (
       ),
     );
   }
-  return Effect.tryPromise(() => discoverEnabledAzureProviderSkills()).pipe(
-    Effect.map((azureSkills) => ({
+  return Effect.tryPromise(async () => {
+    const [azureSkills, azureAgents] = await Promise.all([
+      discoverEnabledAzureProviderSkills(),
+      discoverEnabledAzureProviderAgents(),
+    ]);
+    return { azureSkills, azureAgents };
+  }).pipe(
+    Effect.map(({ azureSkills, azureAgents }) => ({
       ...snapshot,
       skills: mergeAzureProviderSkills(snapshot.skills, azureSkills),
+      slashCommands: mergeAzureProviderSlashCommands(snapshot.slashCommands, azureAgents),
     })),
     // The provider itself remains usable if the optional Azure home is absent
     // or unreadable. An empty inventory is the safe fallback.

@@ -77,7 +77,7 @@ export const tailscaleServePortFlag = Flag.integer("tailscale-serve-port").pipe(
 
 const EnvServerConfig = Config.all({
   logLevel: Config.logLevel("AZURE_LOG_LEVEL").pipe(Config.withDefault("Info")),
-  traceMinLevel: Config.logLevel("AZURE_TRACE_MIN_LEVEL").pipe(Config.withDefault("Info")),
+  traceMinLevel: Config.logLevel("AZURE_TRACE_MIN_LEVEL").pipe(Config.withDefault("Warning")),
   traceTimingEnabled: Config.boolean("AZURE_TRACE_TIMING_ENABLED").pipe(Config.withDefault(true)),
   traceFile: Config.string("AZURE_TRACE_FILE").pipe(
     Config.option,

@@ -12,6 +12,7 @@ import {
   getProviderOptionStringSelectionValue,
   normalizeCustomModelSlug,
   normalizeModelSlug,
+  resolveModelContextWindow,
 } from "./model.ts";
 
 const codexCaps: ModelCapabilities = createModelCapabilities({
@@ -153,5 +154,23 @@ describe("model slug normalization", () => {
 
     expect(normalizeModelSlug("opus", claude)).toBe("claude-opus-5");
     expect(normalizeCustomModelSlug(" opus ")).toBe("opus");
+  });
+});
+
+describe("resolveModelContextWindow", () => {
+  it("resolves fallback context window for nvidiaNim models", () => {
+    expect(
+      resolveModelContextWindow({
+        provider: "nvidiaNim",
+        model: "moonshotai/kimi-k3",
+      }),
+    ).toBe(1_048_576);
+
+    expect(
+      resolveModelContextWindow({
+        provider: "nvidiaNim",
+        model: "deepseek-ai/deepseek-v4-flash-0731",
+      }),
+    ).toBe(1_000_000);
   });
 });

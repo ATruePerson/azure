@@ -1,4 +1,4 @@
-// Keep the development window identity aligned with the packaged Azure Code app.
+// Keep the development window identity aligned with the packaged Azure app.
 
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
@@ -15,7 +15,7 @@ const repoRoot = NodePath.resolve(desktopDir, "..", "..");
 const devBundleIdSuffix = NodePath.basename(repoRoot)
   .toLowerCase()
   .replaceAll(/[^a-z0-9]+/g, "");
-export const APP_DISPLAY_NAME = "Azure Code";
+export const APP_DISPLAY_NAME = "Azure";
 export const APP_BUNDLE_ID = isDevelopment
   ? `com.atrueperson.azurecode.dev.${devBundleIdSuffix || "local"}`
   : "com.atrueperson.azurecode";

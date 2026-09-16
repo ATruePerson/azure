@@ -26,6 +26,7 @@ const DEFAULT_TRUSTED_ROOTS = [
   NodePath.join(NodeOS.homedir(), ".azure"),
   NodePath.join(NodeOS.homedir(), ".config", "azure"),
   NodePath.join(NodeOS.homedir(), "Developer", "AI"),
+  NodePath.join(NodeOS.homedir(), "Documents"),
 ] as const;
 const SKILL_TOKEN = /\$([A-Za-z0-9][A-Za-z0-9._-]{0,127})/gu;
 const MAX_HOOK_OUTPUT_BYTES = 64 * 1024;
@@ -34,6 +35,16 @@ const MAX_HOOK_TIMEOUT_MS = 30_000;
 type RegistryKind = "hooks" | "plugins" | "skills" | "mcpServers";
 type IconCategory = "hooks" | "plugins" | "skills" | "mcp";
 type DisabledCapabilities = Record<AzureCapabilityKind, Set<string>>;
+type ProjectOnlyMap = Record<AzureCapabilityKind, Record<string, string[]>>;
+
+interface CapabilityState {
+  readonly disabled: DisabledCapabilities;
+  readonly projectOnly: ProjectOnlyMap;
+}
+
+function emptyProjectOnly(): ProjectOnlyMap {
+  return { hooks: {}, plugins: {}, skills: {}, mcp: {} };
+}
 
 interface PluginManifest {
   readonly path: string;
@@ -291,7 +302,45 @@ function normalizeOpenCodeMcpServer(value: unknown): Record<string, unknown> | n
   };
 }
 
-async function readDisabledCapabilities(azureHome: string): Promise<DisabledCapabilities> {
+function matchesProjectScope(
+  projectRoots: ReadonlyArray<string> | undefined,
+  cwd?: string,
+): boolean {
+  if (!projectRoots || projectRoots.length === 0) return true;
+  if (!cwd?.trim()) return false;
+  const normalized = NodePath.resolve(cwd);
+  return projectRoots.some((root) => {
+    const resolved = NodePath.resolve(root);
+    return normalized === resolved || normalized.startsWith(`${resolved}${NodePath.sep}`);
+  });
+}
+
+function isEnabledInScope(item: CodexCapabilityItem, cwd?: string): boolean {
+  return (
+    item.detail === "Available" &&
+    Boolean(item.enabled) &&
+    matchesProjectScope(item.projectRoots, cwd)
+  );
+}
+
+function readProjectOnlyMap(value: unknown): ProjectOnlyMap {
+  const projectOnly = emptyProjectOnly();
+  if (!value || typeof value !== "object" || Array.isArray(value)) return projectOnly;
+  for (const kind of ["hooks", "plugins", "skills", "mcp"] as const) {
+    const entries = (value as Record<string, unknown>)[kind];
+    if (!entries || typeof entries !== "object" || Array.isArray(entries)) continue;
+    for (const [id, roots] of Object.entries(entries)) {
+      if (!SAFE_ENTRY_NAME.test(id) || !Array.isArray(roots)) continue;
+      const paths = roots.filter(
+        (root): root is string => typeof root === "string" && root.trim().length > 0,
+      );
+      if (paths.length > 0) projectOnly[kind][id] = paths;
+    }
+  }
+  return projectOnly;
+}
+
+async function readCapabilityState(azureHome: string): Promise<CapabilityState> {
   const disabled = emptyDisabledCapabilities();
   try {
     const raw = JSON.parse(
@@ -312,7 +361,7 @@ async function readDisabledCapabilities(azureHome: string): Promise<DisabledCapa
         }
       }
     }
-    return disabled;
+    return { disabled, projectOnly: readProjectOnlyMap(record.projectOnly) };
   } catch {
     try {
       const raw = JSON.parse(
@@ -330,21 +379,36 @@ async function readDisabledCapabilities(azureHome: string): Promise<DisabledCapa
         );
       }
     } catch {
-      // Missing state means every discovered capability is enabled.
+      // Missing state means every discovered capability is enabled globally.
     }
-    return disabled;
+    return { disabled, projectOnly: emptyProjectOnly() };
   }
 }
 
-async function writeDisabledCapabilities(
-  azureHome: string,
-  disabled: DisabledCapabilities,
-): Promise<void> {
+async function writeCapabilityState(azureHome: string, state: CapabilityState): Promise<void> {
   const statePath = NodePath.join(azureHome, CAPABILITY_STATE_FILE);
   const temporaryPath = `${statePath}.${process.pid}.tmp`;
+  const projectOnly = Object.fromEntries(
+    (["hooks", "plugins", "skills", "mcp"] as const).map((kind) => [
+      kind,
+      Object.fromEntries(
+        Object.entries(state.projectOnly[kind]).filter(([, roots]) => roots.length > 0),
+      ),
+    ]),
+  );
   await NodeFSP.writeFile(
     temporaryPath,
-    `${JSON.stringify({ version: 1, disabled: Object.fromEntries(Object.entries(disabled).map(([kind, values]) => [kind, [...values].sort()])) }, null, 2)}\n`,
+    `${JSON.stringify(
+      {
+        version: 2,
+        disabled: Object.fromEntries(
+          Object.entries(state.disabled).map(([kind, values]) => [kind, [...values].sort()]),
+        ),
+        projectOnly,
+      },
+      null,
+      2,
+    )}\n`,
     { encoding: "utf8", mode: 0o600 },
   );
   await NodeFSP.rename(temporaryPath, statePath);
@@ -614,6 +678,19 @@ async function discoverDirectory(
     .filter((entry): entry is CodexCapabilityItem => entry !== null);
 }
 
+function stampProjectRoots(
+  items: ReadonlyArray<CodexCapabilityItem>,
+  kind: AzureCapabilityKind,
+  projectOnly: ProjectOnlyMap,
+): CodexCapabilityItem[] {
+  return items.map((entry) => {
+    const scopeKind = entry.control?._tag === "plugin" ? "plugins" : kind;
+    const scopeId = entry.control?._tag === "plugin" ? entry.control.pluginId : entry.id;
+    const roots = projectOnly[scopeKind][scopeId];
+    return roots && roots.length > 0 ? { ...entry, projectRoots: roots } : entry;
+  });
+}
+
 export async function discoverAzureHomeCapabilities(
   azureHome = defaultAzureHome(),
   trustedRoots: ReadonlyArray<string> = DEFAULT_TRUSTED_ROOTS,
@@ -631,7 +708,7 @@ export async function discoverAzureHomeCapabilities(
   const resolvedTrustedRoots = await Promise.all(
     trustedRoots.map((root) => NodeFSP.realpath(root).catch(() => root)),
   );
-  const disabled = await readDisabledCapabilities(azureHome);
+  const { disabled, projectOnly } = await readCapabilityState(azureHome);
   const [rawHooks, plugins, skills, mcpServers] = await Promise.all([
     discoverDirectory(azureHome, "hooks", resolvedTrustedRoots, disabled),
     discoverDirectory(azureHome, "plugins", resolvedTrustedRoots, disabled),
@@ -653,7 +730,13 @@ export async function discoverAzureHomeCapabilities(
         }
       : hook,
   );
-  return { homeStatus: status, hooks, plugins, skills, mcpServers };
+  return {
+    homeStatus: status,
+    hooks: stampProjectRoots(hooks, "hooks", projectOnly),
+    plugins: stampProjectRoots(plugins, "plugins", projectOnly),
+    skills: stampProjectRoots(skills, "skills", projectOnly),
+    mcpServers: stampProjectRoots(mcpServers, "mcp", projectOnly),
+  };
 }
 
 export async function setAzureHomeCapabilityEnabled(
@@ -661,6 +744,7 @@ export async function setAzureHomeCapabilityEnabled(
   id: string,
   enabled: boolean,
   azureHome = defaultAzureHome(),
+  projectRoots?: ReadonlyArray<string>,
 ): Promise<CodexCapabilities> {
   if (!SAFE_ENTRY_NAME.test(id)) {
     throw new Error("Invalid Azure capability id.");
@@ -679,16 +763,24 @@ export async function setAzureHomeCapabilityEnabled(
     throw new Error("Azure capability is not available.");
   }
 
-  const disabled = await readDisabledCapabilities(azureHome);
+  const state = await readCapabilityState(azureHome);
   const targetKind = item.control?._tag === "plugin" ? "plugins" : kind;
   const targetId = item.control?._tag === "plugin" ? item.control.pluginId : id;
-  const target = disabled[targetKind];
+  const target = state.disabled[targetKind];
   if (enabled) {
     target.delete(targetId);
   } else {
     target.add(targetId);
   }
-  await writeDisabledCapabilities(azureHome, disabled);
+  if (projectRoots !== undefined) {
+    const roots = [...new Set(projectRoots.map((root) => root.trim()).filter(Boolean))];
+    if (roots.length === 0) {
+      delete state.projectOnly[targetKind][targetId];
+    } else {
+      state.projectOnly[targetKind][targetId] = roots;
+    }
+  }
+  await writeCapabilityState(azureHome, state);
   return discoverAzureHomeCapabilities(azureHome);
 }
 
@@ -702,10 +794,11 @@ export async function setAzureHomeSkillEnabled(
 
 export async function discoverEnabledAzureSkillPaths(
   azureHome = defaultAzureHome(),
+  cwd?: string,
 ): Promise<ReadonlyArray<string>> {
   const capabilities = await discoverAzureHomeCapabilities(azureHome);
   return capabilities.skills
-    .filter((skill) => skill.detail === "Available" && skill.enabled)
+    .filter((skill) => isEnabledInScope(skill, cwd))
     .map((skill) => NodePath.join(azureHome, "skills", skill.id));
 }
 
@@ -717,6 +810,7 @@ export async function discoverEnabledAzureSkillPaths(
 export async function discoverEnabledAzureSkills(
   azureHome = defaultAzureHome(),
   trustedRoots: ReadonlyArray<string> = DEFAULT_TRUSTED_ROOTS,
+  cwd?: string,
 ): Promise<ReadonlyArray<AzurePortableSkill>> {
   const capabilities = await discoverAzureHomeCapabilities(azureHome, trustedRoots);
   const resolvedRoots = await Promise.all(
@@ -725,7 +819,7 @@ export async function discoverEnabledAzureSkills(
   const skills: AzurePortableSkill[] = [];
 
   for (const entry of capabilities.skills) {
-    if (entry.detail !== "Available" || !entry.enabled) continue;
+    if (!isEnabledInScope(entry, cwd)) continue;
     const root = await capabilityDirectory(azureHome, "skills", entry.id, resolvedRoots);
     if (!root) continue;
     const path = NodePath.join(root, "SKILL.md");
@@ -734,9 +828,10 @@ export async function discoverEnabledAzureSkills(
       const contents = await NodeFSP.readFile(path, "utf8");
       if (Buffer.byteLength(contents, "utf8") > MAX_ENTRY_BYTES) continue;
       const metadata = skillFrontmatter(contents);
+      const primaryName = metadata.name ?? entry.id;
       skills.push({
         id: entry.id,
-        name: metadata.name ?? entry.id,
+        name: primaryName,
         path,
         root,
         contents,
@@ -744,13 +839,25 @@ export async function discoverEnabledAzureSkills(
         source: "azure",
         ...(metadata.description ? { description: metadata.description } : {}),
       });
+      if (entry.id !== primaryName) {
+        skills.push({
+          id: entry.id,
+          name: entry.id,
+          path,
+          root,
+          contents,
+          enabled: true,
+          source: "azure",
+          ...(metadata.description ? { description: metadata.description } : {}),
+        });
+      }
     } catch {
       // A capability can disappear between discovery and read. Ignore it.
     }
   }
 
   for (const plugin of capabilities.plugins) {
-    if (plugin.detail !== "Available" || !plugin.enabled) continue;
+    if (!isEnabledInScope(plugin, cwd)) continue;
     const pluginRoot = await capabilityDirectory(azureHome, "plugins", plugin.id, resolvedRoots);
     if (!pluginRoot) continue;
     const manifest = await readPluginManifest(pluginRoot, resolvedRoots, "skills");
@@ -810,6 +917,124 @@ export async function discoverEnabledAzureProviderSkills(
   }));
 }
 
+export interface AzurePortableAgent {
+  readonly id: string;
+  readonly name: string;
+  readonly description?: string;
+  readonly model?: string;
+  readonly instructions: string;
+  readonly path: string;
+  readonly root: string;
+}
+
+export async function discoverEnabledAzureAgents(
+  azureHome = defaultAzureHome(),
+  trustedRoots: ReadonlyArray<string> = DEFAULT_TRUSTED_ROOTS,
+): Promise<ReadonlyArray<AzurePortableAgent>> {
+  const agentsDir = NodePath.join(azureHome, "agents");
+  const resolvedRoots = await Promise.all(
+    trustedRoots.map((root) => NodeFSP.realpath(root).catch(() => root)),
+  );
+  let entries: ReadonlyArray<import("node:fs").Dirent>;
+  try {
+    entries = await NodeFSP.readdir(agentsDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const agents: AzurePortableAgent[] = [];
+  for (const entry of entries) {
+    if (entry.name.startsWith(".")) continue;
+    const root = NodePath.join(agentsDir, entry.name);
+    const metadata = await metadataForTrustedPath(root, resolvedRoots);
+    if (!metadata?.isDirectory()) continue;
+
+    let files: ReadonlyArray<string>;
+    try {
+      files = await NodeFSP.readdir(root);
+    } catch {
+      continue;
+    }
+
+    const candidates = [
+      files.find((f) => f.endsWith(".opencode.md")),
+      files.find((f) => f.endsWith(".md") && !f.endsWith(".opencode.md")),
+      files.find((f) => f.endsWith(".toml")),
+    ].filter((f): f is string => Boolean(f));
+
+    let name = entry.name;
+    let description: string | undefined = undefined;
+    let model: string | undefined = undefined;
+    let instructions = "";
+    let agentPath = root;
+
+    for (const file of candidates) {
+      const filePath = NodePath.join(root, file);
+      if (!(await isBoundedTrustedRegularFile(filePath, resolvedRoots))) continue;
+      try {
+        const content = await NodeFSP.readFile(filePath, "utf8");
+        if (file.endsWith(".md")) {
+          const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
+          if (fmMatch) {
+            const fm = fmMatch[1] ?? "";
+            const body = (fmMatch[2] ?? "").trim();
+            const parsedName = fm.match(/name:\s*([^\r\n]+)/)?.[1]?.trim();
+            const parsedDesc = fm.match(/description:\s*([^\r\n]+)/)?.[1]?.trim();
+            const parsedModel = fm.match(/model:\s*([^\r\n]+)/)?.[1]?.trim();
+            if (parsedName && name === entry.name) name = parsedName;
+            if (parsedDesc && !description) description = parsedDesc;
+            if (parsedModel && !model) model = parsedModel;
+            if (body && !instructions) {
+              instructions = body;
+              agentPath = filePath;
+            }
+          } else if (!instructions) {
+            instructions = content.trim();
+            agentPath = filePath;
+          }
+        } else if (file.endsWith(".toml")) {
+          const parsedName = content.match(/name\s*=\s*"([^"]+)"/)?.[1]?.trim();
+          const parsedDesc = content.match(/description\s*=\s*"([^"]+)"/)?.[1]?.trim();
+          const parsedModel = content.match(/model\s*=\s*"([^"]+)"/)?.[1]?.trim();
+          if (parsedName && name === entry.name) name = parsedName;
+          if (parsedDesc && !description) description = parsedDesc;
+          if (parsedModel && !model) model = parsedModel;
+          if (!instructions) {
+            instructions = content.trim();
+            agentPath = filePath;
+          }
+        }
+      } catch {
+        // Skip unreadable
+      }
+    }
+
+    if (instructions || description) {
+      agents.push({
+        id: entry.name,
+        name,
+        ...(description ? { description } : {}),
+        ...(model ? { model } : {}),
+        instructions,
+        path: agentPath,
+        root,
+      });
+    }
+  }
+
+  return agents.toSorted((left, right) => left.name.localeCompare(right.name));
+}
+
+export async function discoverEnabledAzureProviderAgents(
+  azureHome = defaultAzureHome(),
+): Promise<ReadonlyArray<ServerProviderSlashCommand>> {
+  return (await discoverEnabledAzureAgents(azureHome)).map((agent) => ({
+    name: agent.name,
+    ...(agent.description ? { description: agent.description } : {}),
+    source: "agent",
+  }));
+}
+
 async function discoverKnownAzureSkillNames(
   azureHome: string,
   trustedRoots: ReadonlyArray<string> = DEFAULT_TRUSTED_ROOTS,
@@ -826,7 +1051,9 @@ async function discoverKnownAzureSkillNames(
     const path = NodePath.join(root, "SKILL.md");
     if (!(await isBoundedTrustedRegularFile(path, resolvedRoots))) continue;
     try {
-      names.add(skillFrontmatter(await NodeFSP.readFile(path, "utf8")).name ?? skill.id);
+      const metadata = skillFrontmatter(await NodeFSP.readFile(path, "utf8"));
+      if (metadata.name) names.add(metadata.name);
+      names.add(skill.id);
     } catch {
       // A capability can disappear between discovery and read.
     }
@@ -871,6 +1098,20 @@ export function mergeAzureProviderSkills(
     if (skill.scope === "project") skills.set(skill.name, skill);
   }
   return [...skills.values()].toSorted((left, right) => left.name.localeCompare(right.name));
+}
+
+export function mergeAzureProviderSlashCommands(
+  providerCommands: ReadonlyArray<ServerProviderSlashCommand> | undefined,
+  azureAgents: ReadonlyArray<ServerProviderSlashCommand>,
+): ReadonlyArray<ServerProviderSlashCommand> {
+  const commands = new Map<string, ServerProviderSlashCommand>();
+  for (const cmd of providerCommands ?? []) {
+    commands.set(cmd.name, cmd);
+  }
+  for (const agent of azureAgents) {
+    commands.set(agent.name, agent);
+  }
+  return [...commands.values()].toSorted((left, right) => left.name.localeCompare(right.name));
 }
 
 function hookAdditionalContext(value: unknown): string | undefined {
@@ -943,6 +1184,7 @@ async function appendPortableHooks(input: {
 export async function discoverEnabledAzurePortableHooks(
   azureHome = defaultAzureHome(),
   trustedRoots: ReadonlyArray<string> = DEFAULT_TRUSTED_ROOTS,
+  cwd?: string,
 ): Promise<ReadonlyArray<AzurePortableHook>> {
   const capabilities = await discoverAzureHomeCapabilities(azureHome, trustedRoots);
   const resolvedRoots = await Promise.all(
@@ -961,14 +1203,14 @@ export async function discoverEnabledAzurePortableHooks(
     await appendPortableHooks({ hooks, trustedRoots: resolvedRoots, ...input });
   };
   for (const item of capabilities.hooks) {
-    if (item.detail !== "Available" || !item.enabled) continue;
+    if (!isEnabledInScope(item, cwd)) continue;
     const source = NodePath.join(azureHome, "hooks", `${item.id}.json`);
     const pluginRoot =
       (await capabilityDirectory(azureHome, "plugins", item.id, resolvedRoots)) ?? azureHome;
     await appendOnce({ source, pluginId: item.id, pluginRoot });
   }
   for (const plugin of capabilities.plugins) {
-    if (plugin.detail !== "Available" || !plugin.enabled) continue;
+    if (!isEnabledInScope(plugin, cwd)) continue;
     const pluginRoot = await capabilityDirectory(azureHome, "plugins", plugin.id, resolvedRoots);
     if (!pluginRoot) continue;
     const manifest = await readPluginManifest(pluginRoot, resolvedRoots, "hooks");
@@ -989,7 +1231,11 @@ export async function runAzurePortableHooks(input: {
   readonly azureHome?: string;
 }): Promise<ReadonlyArray<AzurePortableHookResult>> {
   const azureHome = input.azureHome ?? defaultAzureHome();
-  const hooks = await discoverEnabledAzurePortableHooks(azureHome);
+  const hooks = await discoverEnabledAzurePortableHooks(
+    azureHome,
+    DEFAULT_TRUSTED_ROOTS,
+    input.cwd,
+  );
   const dataRoot = NodePath.join(azureHome, "plugin-data");
   await NodeFSP.mkdir(dataRoot, { recursive: true, mode: 0o700 }).catch(() => undefined);
   return Promise.all(
@@ -1090,6 +1336,7 @@ export async function runAzurePortableHooks(input: {
 export async function resolveAzureExplicitSkills(input: {
   readonly prompt: string | undefined;
   readonly azureHome?: string;
+  readonly cwd?: string;
 }): Promise<{
   readonly prompt: string | undefined;
   readonly selected: ReadonlyArray<AzurePortableSkill>;
@@ -1098,10 +1345,16 @@ export async function resolveAzureExplicitSkills(input: {
   const azureHome = input.azureHome ?? defaultAzureHome();
   const [capabilities, skills, knownSkills] = await Promise.all([
     discoverAzureHomeCapabilities(azureHome),
-    discoverEnabledAzureSkills(azureHome),
+    discoverEnabledAzureSkills(azureHome, DEFAULT_TRUSTED_ROOTS, input.cwd),
     discoverKnownAzureSkillNames(azureHome),
   ]);
-  const selectedByName = new Map(skills.map((skill) => [skill.name, skill] as const));
+  const selectedByName = new Map<string, AzurePortableSkill>();
+  for (const skill of skills) {
+    selectedByName.set(skill.name, skill);
+    if (skill.id && !selectedByName.has(skill.id)) {
+      selectedByName.set(skill.id, skill);
+    }
+  }
   const disabled = new Set(
     capabilities.skills
       .filter((skill) => skill.detail === "Available" && !skill.enabled)
@@ -1146,6 +1399,7 @@ export async function resolveAzureExplicitSkills(input: {
 
 export async function discoverEnabledAzureMcpServers(
   azureHome = defaultAzureHome(),
+  cwd?: string,
 ): Promise<ReadonlyArray<AzureMcpServerDescriptor>> {
   const capabilities = await discoverAzureHomeCapabilities(azureHome);
   const trustedRoots = await Promise.all(
@@ -1153,7 +1407,7 @@ export async function discoverEnabledAzureMcpServers(
   );
   const enabled = new Set(
     capabilities.mcpServers
-      .filter((server) => server.detail === "Available" && server.enabled)
+      .filter((server) => isEnabledInScope(server, cwd))
       .map((server) => server.id),
   );
   if (enabled.size === 0) return [];
@@ -1187,16 +1441,17 @@ export async function discoverEnabledAzureMcpServers(
 /** Build the small OpenCode config projection owned by Azure capabilities. */
 export async function discoverEnabledAzureOpenCodeConfig(
   azureHome = defaultAzureHome(),
+  cwd?: string,
 ): Promise<Record<string, unknown>> {
   const capabilities = await discoverAzureHomeCapabilities(azureHome);
   const config: Record<string, unknown> = {};
-  const skills = (await discoverEnabledAzureSkills(azureHome)).map((skill) => skill.root);
+  const skills = (await discoverEnabledAzureSkills(azureHome, DEFAULT_TRUSTED_ROOTS, cwd)).map(
+    (skill) => skill.root,
+  );
   if (skills.length > 0) config.skills = { paths: skills };
 
   const plugins: string[] = [];
-  for (const plugin of capabilities.plugins.filter(
-    (entry) => entry.detail === "Available" && entry.enabled,
-  )) {
+  for (const plugin of capabilities.plugins.filter((entry) => isEnabledInScope(entry, cwd))) {
     const pluginRoot = NodePath.join(azureHome, "plugins", plugin.id);
     try {
       const parsed = JSON.parse(
@@ -1221,9 +1476,7 @@ export async function discoverEnabledAzureOpenCodeConfig(
 
   const mcpServers: Record<string, unknown> = {};
   const enabledMcpByFile = new Map<string, Set<string>>();
-  for (const server of capabilities.mcpServers.filter(
-    (entry) => entry.detail === "Available" && entry.enabled,
-  )) {
+  for (const server of capabilities.mcpServers.filter((entry) => isEnabledInScope(entry, cwd))) {
     const separator = server.id.indexOf("__");
     if (separator <= 0) continue;
     const fileId = server.id.slice(0, separator);

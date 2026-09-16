@@ -25,6 +25,8 @@ export function resolveModelContextWindow(input: {
   if (String(input.provider) !== "nvidiaNim" || !model) return undefined;
   if (model === "nvidia/nemotron-3-ultra-550b-a55b") return 1_000_000;
   if (model === "stepfun-ai/step-3.7-flash") return 262_144;
+  if (model === "moonshotai/kimi-k3") return 1_048_576;
+  if (model === "deepseek-ai/deepseek-v4-flash-0731") return 1_000_000;
   return undefined;
 }
 

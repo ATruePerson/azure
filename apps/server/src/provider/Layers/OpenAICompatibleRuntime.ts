@@ -11,6 +11,7 @@ import {
   ProviderInstanceId,
   RuntimeItemId,
   RuntimeRequestId,
+  RuntimeTaskId,
   ThreadId,
   TurnId,
   type ProviderApprovalDecision,
@@ -37,6 +38,8 @@ import type {
 import { resolveModelContextWindow } from "@azure/shared/model";
 import { ProviderAdapterSessionNotFoundError, ProviderAdapterValidationError } from "../Errors.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import { API_SUBAGENT_TOOLS } from "../ApiSubagents.ts";
+import { discoverEnabledAzureAgents } from "../AzureHomeCapabilities.ts";
 
 export interface OpenAICompatibleTool {
   readonly type: "function";
@@ -86,6 +89,7 @@ export interface OpenAICompatibleRuntimeOptions {
   readonly mcpClientFactory?: (
     config: McpProviderSession.McpProviderSessionConfig,
   ) => Promise<OpenAICompatibleMcpClient>;
+  readonly retryDelayMs?: number;
 }
 
 export interface OpenAICompatibleModel {
@@ -140,9 +144,13 @@ export class OpenAICompatibleProviderError extends Schema.TaggedErrorClass<OpenA
   { operation: Schema.String, status: Schema.Int },
 ) {
   override get message(): string {
-    const unavailableModelHint =
-      this.status === 404 ? " The selected model may be unavailable for this account." : "";
-    return `OpenAI-compatible provider request failed in ${this.operation} (HTTP ${this.status}).${unavailableModelHint}`;
+    const hint =
+      this.status === 404
+        ? " The selected model may be unavailable for this account."
+        : this.status === 529
+          ? " The provider is temporarily overloaded (HTTP 529). Please try again shortly or switch models."
+          : "";
+    return `OpenAI-compatible provider request failed in ${this.operation} (HTTP ${this.status}).${hint}`;
   }
 }
 
@@ -176,6 +184,18 @@ interface TurnState {
   readonly items: ReadonlyArray<unknown>;
 }
 
+interface SubagentRunState {
+  readonly id: string;
+  readonly agent: string;
+  readonly title: string;
+  readonly model: string;
+  status: "running" | "completed" | "failed" | "stopped";
+  readonly task: string;
+  result?: string;
+  error?: string;
+  promise: Promise<void>;
+}
+
 interface SessionState {
   session: ProviderSession;
   messages: Message[];
@@ -194,6 +214,7 @@ interface SessionState {
   mcpTools?: ReadonlyMap<string, OpenAICompatibleMcpTool>;
   pendingMcpApprovals: Map<ApprovalRequestId, Deferred.Deferred<ProviderApprovalDecision>>;
   approvedMcpTools: Set<string>;
+  subagents: Map<string, SubagentRunState>;
 }
 
 const RESUME_VERSION = 2;
@@ -392,13 +413,21 @@ function requestOptions(
     return effort ? { reasoning: { effort } } : {};
   }
   if (providerId !== "nvidiaNim") return {};
-  if (model.toLowerCase() === "nvidia/nemotron-3-ultra-550b-a55b") {
+  const normalizedModel = model.toLowerCase();
+  if (normalizedModel === "nvidia/nemotron-3-ultra-550b-a55b") {
     const effort = optionValue(modelOptions, "reasoningEffort");
     return effort && ["none", "medium", "high"].includes(effort)
       ? { reasoning_effort: effort }
       : {};
   }
-  if (model.toLowerCase().includes("gpt-oss")) {
+  if (
+    normalizedModel === "moonshotai/kimi-k3" ||
+    normalizedModel === "deepseek-ai/deepseek-v4-flash-0731"
+  ) {
+    const effort = optionValue(modelOptions, "reasoningEffort");
+    return effort && ["low", "high", "max"].includes(effort) ? { reasoning_effort: effort } : {};
+  }
+  if (normalizedModel.includes("gpt-oss")) {
     const effort = optionValue(modelOptions, "reasoningEffort");
     return effort && ["low", "medium", "high"].includes(effort) ? { reasoning_effort: effort } : {};
   }
@@ -452,6 +481,10 @@ function isAuthStatus(status: number): boolean {
   return status === 401 || status === 403;
 }
 
+function isTransientStatus(status: number): boolean {
+  return status === 429 || status === 502 || status === 503 || status === 504 || status === 529;
+}
+
 function requestWithHeaders(
   request: HttpClientRequest.HttpClientRequest,
   options: OpenAICompatibleRuntimeOptions,
@@ -469,9 +502,31 @@ function responseBody(
   client: HttpClient.HttpClient,
   request: HttpClientRequest.HttpClientRequest,
   operation: string,
+  retryDelayMs?: number,
 ): Effect.Effect<string, OpenAICompatibleError> {
-  return client.execute(request).pipe(
-    Effect.mapError(() => makeError(operation, undefined)),
+  const executeWithRetry = Effect.gen(function* () {
+    let attempts = 0;
+    const maxRetries = 3;
+    while (true) {
+      const resp = yield* client
+        .execute(request)
+        .pipe(Effect.mapError(() => makeError(operation, undefined)));
+      if (isTransientStatus(resp.status) && attempts < maxRetries) {
+        attempts++;
+        const backoffMs =
+          retryDelayMs !== undefined
+            ? retryDelayMs
+            : Math.min(300 * Math.pow(2, attempts - 1), 2500);
+        if (backoffMs > 0) {
+          yield* Effect.sleep(backoffMs);
+        }
+        continue;
+      }
+      return resp;
+    }
+  });
+
+  return executeWithRetry.pipe(
     Effect.flatMap((response) =>
       response.text.pipe(
         Effect.mapError(() => makeError(operation, undefined)),
@@ -812,6 +867,7 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
           : {}),
         pendingMcpApprovals: new Map(),
         approvedMcpTools: new Set(),
+        subagents: new Map(),
       });
       yield* emit({
         ...makeEventBase(options.provider, input.threadId, ++eventNumber),
@@ -968,7 +1024,12 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
       const mcpTools = yield* loadMcpTools(state, input.threadId, input.turnId);
       const mcpToolsByName = new Map(mcpTools.map((tool) => [tool.name, tool] as const));
       const requestTools = [
-        ...(options.tools ?? []).filter((tool) => !mcpToolsByName.has(tool.function.name)),
+        ...API_SUBAGENT_TOOLS,
+        ...(options.tools ?? []).filter(
+          (tool) =>
+            !mcpToolsByName.has(tool.function.name) &&
+            !API_SUBAGENT_TOOLS.some((t) => t.function.name === tool.function.name),
+        ),
         ...mcpTools.map(mcpToolToOpenAi),
       ];
       const toolCalls = new Map<number, ToolCall>();
@@ -1007,7 +1068,7 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
         return yield* new OpenAICompatibleAuthError({ operation, status: 401 });
       }
 
-      const response = yield* client
+      let response = yield* client
         .execute(
           requestWithHeaders(
             HttpClientRequest.post(
@@ -1023,20 +1084,56 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
           ),
         )
         .pipe(Effect.mapError(() => makeError(operation, undefined)));
+      if (isTransientStatus(response.status)) {
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          const backoffMs =
+            options.retryDelayMs !== undefined
+              ? options.retryDelayMs
+              : Math.min(300 * Math.pow(2, attempt - 1), 2500);
+          if (backoffMs > 0) {
+            yield* Effect.sleep(backoffMs);
+          }
+          response = yield* client
+            .execute(
+              requestWithHeaders(
+                HttpClientRequest.post(
+                  joinUrl(options.baseUrl, options.chatCompletionsPath ?? "/chat/completions"),
+                ).pipe(
+                  HttpClientRequest.bodyJsonUnsafe(payload),
+                  HttpClientRequest.setHeaders({
+                    "Content-Type": "application/json",
+                    Accept: "text/event-stream",
+                  }),
+                ),
+                options,
+              ),
+            )
+            .pipe(Effect.mapError(() => makeError(operation, undefined)));
+          if (!isTransientStatus(response.status)) {
+            break;
+          }
+        }
+      }
       if (response.status < 200 || response.status >= 300) {
         return yield* response.text.pipe(
           Effect.mapError(() => makeError(operation, undefined)),
-          Effect.flatMap(() =>
+          Effect.flatMap((bodyText) =>
             Effect.fail(
               isAuthStatus(response.status)
                 ? new OpenAICompatibleAuthError({ operation, status: response.status })
-                : mcpTools.length > 0 && response.status >= 400 && response.status < 500
-                  ? new OpenAICompatibleValidationError({
-                      operation,
-                      detail:
-                        "The selected model rejected OpenAI-compatible function tools. Choose a model that supports tool calling.",
-                    })
-                  : new OpenAICompatibleProviderError({ operation, status: response.status }),
+                : response.status === 429
+                  ? new OpenAICompatibleProviderError({ operation, status: response.status })
+                  : mcpTools.length > 0 &&
+                      (response.status === 400 || response.status === 422) &&
+                      (bodyText.toLowerCase().includes("tool") ||
+                        bodyText.toLowerCase().includes("function") ||
+                        bodyText.toLowerCase().includes("not support"))
+                    ? new OpenAICompatibleValidationError({
+                        operation,
+                        detail:
+                          "The selected model rejected OpenAI-compatible function tools. Choose a model that supports tool calling.",
+                      })
+                    : new OpenAICompatibleProviderError({ operation, status: response.status }),
             ),
           ),
         );
@@ -1231,10 +1328,22 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
         ...assembledToolCalls.map((tool) => ({ type: "toolCall", tool })),
       ];
       input.items.push(...itemList);
-      const hasAzureMcpToolCall = indexedToolCalls.some(([, tool]) =>
-        tool.function.name.includes("__"),
+      const isSubagentTool = (name: string) =>
+        name === "spawn_subagent" ||
+        name === "spawn_agent" ||
+        name === "get_subagent_status" ||
+        name === "wait_agents" ||
+        name === "wait_subagents" ||
+        name === "stop_agent" ||
+        name === "send_message";
+
+      const hasExecutableToolCall = indexedToolCalls.some(
+        ([, tool]) =>
+          mcpToolsByName.has(tool.function.name) ||
+          tool.function.name.includes("__") ||
+          isSubagentTool(tool.function.name),
       );
-      if (hasAzureMcpToolCall) {
+      if (hasExecutableToolCall) {
         if (input.mcpRounds >= MAX_MCP_TOOL_ROUNDS) {
           return yield* new OpenAICompatibleValidationError({
             operation,
@@ -1242,53 +1351,262 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
           });
         }
         for (const [index, call] of indexedToolCalls) {
-          const tool = mcpToolsByName.get(call.function.name);
           let result: unknown;
           let status: "completed" | "failed" | "declined" = "completed";
-          if (!tool) {
-            result = {
-              isError: true,
-              error: `Unknown Azure MCP tool '${call.function.name}'.`,
-            };
-            status = "failed";
-          } else {
+
+          if (isSubagentTool(call.function.name)) {
             const parsedArguments = Effect.try({
               try: () => decodeToolArguments(call.function.arguments),
               catch: () => undefined,
             });
-            const arguments_ = yield* parsedArguments.pipe(
-              Effect.map((parsed) => (record(parsed) ? parsed : undefined)),
-              Effect.orElseSucceed(() => undefined),
-            );
-            if (!arguments_) {
-              result = { isError: true, error: "Tool arguments must be valid JSON object." };
-              status = "failed";
-            }
-            if (arguments_) {
-              const approved = yield* requestMcpApproval(state, {
-                threadId: input.threadId,
-                turnId: input.turnId,
-                tool,
-                arguments: arguments_,
+            const args = (yield* parsedArguments.pipe(
+              Effect.map((parsed) => (record(parsed) ? parsed : {})),
+              Effect.orElseSucceed(() => ({})),
+            )) as Record<string, unknown>;
+
+            if (call.function.name === "spawn_subagent" || call.function.name === "spawn_agent") {
+              const agentName = String(args.agent || args.taskName || "subagent").trim();
+              const taskDesc = typeof args.task === "string" ? args.task.trim() : "";
+              const agents = yield* Effect.tryPromise(() => discoverEnabledAzureAgents()).pipe(
+                Effect.orElseSucceed(() => []),
+              );
+              const found = agents.find(
+                (a) =>
+                  a.name.toLowerCase() === agentName.toLowerCase() ||
+                  a.name.toLowerCase() === agentName.replace(/^@/u, "").toLowerCase(),
+              );
+              const subagentId = `agent-${randomUUID().slice(0, 8)}`;
+              const taskName =
+                typeof args.taskName === "string" && args.taskName.trim()
+                  ? args.taskName.trim()
+                  : (found?.name ?? agentName);
+              const chosenModel =
+                typeof args.model === "string" && args.model.trim()
+                  ? args.model.trim()
+                  : found?.model || input.model || options.defaultModel || "default";
+
+              const subagentRecord: SubagentRunState = {
+                id: subagentId,
+                agent: found?.name ?? agentName,
+                title: taskName,
+                model: chosenModel,
+                status: "running",
+                task: taskDesc,
+                promise: Promise.resolve(),
+              };
+              state.subagents.set(subagentId, subagentRecord);
+
+              yield* emit({
+                ...makeEventBase(options.provider, input.threadId, ++eventNumber, input.turnId),
+                type: "task.started",
+                payload: {
+                  taskId: RuntimeTaskId.make(subagentId),
+                  agentId: subagentId,
+                  taskType: "subagent",
+                  agentKind: "agent",
+                  title: taskName,
+                  role: found?.name ?? agentName,
+                  model: chosenModel,
+                  status: "running",
+                  description: taskDesc,
+                },
               });
-              if (!approved) {
-                result = { isError: true, error: "User declined this tool call." };
-                status = "declined";
-              } else if (!state.mcpClient) {
-                result = { isError: true, error: "Azure MCP tool is unavailable." };
+
+              // Background execution
+              const bgThreadId = input.threadId;
+              const bgTurnId = input.turnId;
+              subagentRecord.promise = (async () => {
+                try {
+                  const systemPrompt = found?.instructions
+                    ? `${found.instructions}\n\nYou are executing this background subagent task:\n${taskDesc}`
+                    : `You are executing this background subagent task:\n${taskDesc}`;
+
+                  const payload = {
+                    model: chosenModel,
+                    messages: [
+                      { role: "system", content: systemPrompt },
+                      { role: "user", content: taskDesc },
+                    ],
+                    stream: false,
+                  };
+
+                  const body = await Effect.runPromise(
+                    responseBody(
+                      client,
+                      requestWithHeaders(
+                        HttpClientRequest.post(
+                          joinUrl(
+                            options.baseUrl,
+                            options.chatCompletionsPath ?? "/chat/completions",
+                          ),
+                        ).pipe(
+                          HttpClientRequest.bodyJsonUnsafe(payload),
+                          HttpClientRequest.setHeaders({ "Content-Type": "application/json" }),
+                        ),
+                        options,
+                      ),
+                      "subagent.run",
+                    ),
+                  );
+
+                  let outputText = "";
+                  try {
+                    const json = JSON.parse(body);
+                    outputText = json.choices?.[0]?.message?.content ?? "";
+                  } catch {
+                    outputText = body;
+                  }
+                  subagentRecord.status = "completed";
+                  subagentRecord.result = outputText;
+
+                  Effect.runFork(
+                    emit({
+                      ...makeEventBase(options.provider, bgThreadId, ++eventNumber, bgTurnId),
+                      type: "task.completed",
+                      payload: {
+                        taskId: RuntimeTaskId.make(subagentId),
+                        agentId: subagentId,
+                        taskType: "subagent",
+                        agentKind: "agent",
+                        status: "completed",
+                        summary: outputText.slice(0, 1000) || "Task completed.",
+                      },
+                    }),
+                  );
+                } catch (err: any) {
+                  subagentRecord.status = "failed";
+                  subagentRecord.error = err.message ?? String(err);
+                  Effect.runFork(
+                    emit({
+                      ...makeEventBase(options.provider, bgThreadId, ++eventNumber, bgTurnId),
+                      type: "task.completed",
+                      payload: {
+                        taskId: RuntimeTaskId.make(subagentId),
+                        agentId: subagentId,
+                        taskType: "subagent",
+                        agentKind: "agent",
+                        status: "failed",
+                        summary: (err.message ?? "Subagent failed").slice(0, 500),
+                      },
+                    }),
+                  );
+                }
+              })();
+
+              result = {
+                status: "spawned",
+                agentId: subagentId,
+                agent: found?.name ?? agentName,
+                taskName,
+                model: chosenModel,
+                message:
+                  "Subagent spawned and running in the background. Live progress and status are visible in the Agents panel.",
+              };
+              status = "completed";
+            } else if (call.function.name === "get_subagent_status") {
+              const target = state.subagents.get(String(args.agentId));
+              if (!target) {
+                result = { error: `Subagent '${args.agentId}' not found.` };
                 status = "failed";
               } else {
-                result = yield* Effect.tryPromise(() => {
-                  return state.mcpClient!.callTool({ name: tool.name, arguments: arguments_! });
-                }).pipe(
-                  Effect.orElseSucceed(() => {
-                    return {
-                      isError: true,
-                      error: "Azure MCP server failed while running this tool.",
-                    };
-                  }),
-                );
-                if (record(result) && result.isError === true) status = "failed";
+                result = {
+                  agentId: target.id,
+                  agent: target.agent,
+                  title: target.title,
+                  status: target.status,
+                  ...(target.result ? { result: target.result } : {}),
+                  ...(target.error ? { error: target.error } : {}),
+                };
+                status = target.status === "failed" ? "failed" : "completed";
+              }
+            } else if (
+              call.function.name === "wait_agents" ||
+              call.function.name === "wait_subagents"
+            ) {
+              const ids = Array.isArray(args.agentIds) ? args.agentIds.map(String) : [];
+              const targets = ids.map((id) => state.subagents.get(id)).filter(Boolean);
+              if (targets.length > 0) {
+                yield* Effect.tryPromise(() => Promise.all(targets.map((t) => t!.promise)));
+              }
+              result = {
+                agents: targets.map((t) => ({
+                  agentId: t!.id,
+                  status: t!.status,
+                  result: t!.result,
+                  error: t!.error,
+                })),
+              };
+              status = "completed";
+            } else if (call.function.name === "stop_agent") {
+              const target = state.subagents.get(String(args.agentId));
+              if (target && target.status === "running") {
+                target.status = "stopped";
+                yield* emit({
+                  ...makeEventBase(options.provider, input.threadId, ++eventNumber, input.turnId),
+                  type: "task.completed",
+                  payload: {
+                    taskId: RuntimeTaskId.make(target.id),
+                    agentId: target.id,
+                    taskType: "subagent",
+                    agentKind: "agent",
+                    status: "stopped",
+                    summary: "Subagent stopped.",
+                  },
+                });
+              }
+              result = { status: "stopped", agentId: args.agentId };
+              status = "completed";
+            } else {
+              result = { status: "ok" };
+              status = "completed";
+            }
+          } else {
+            const tool = mcpToolsByName.get(call.function.name);
+            if (!tool) {
+              result = {
+                isError: true,
+                error: `Unknown Azure MCP tool '${call.function.name}'.`,
+              };
+              status = "failed";
+            } else {
+              const parsedArguments = Effect.try({
+                try: () => decodeToolArguments(call.function.arguments),
+                catch: () => undefined,
+              });
+              const arguments_ = yield* parsedArguments.pipe(
+                Effect.map((parsed) => (record(parsed) ? parsed : undefined)),
+                Effect.orElseSucceed(() => undefined),
+              );
+              if (!arguments_) {
+                result = { isError: true, error: "Tool arguments must be valid JSON object." };
+                status = "failed";
+              }
+              if (arguments_) {
+                const approved = yield* requestMcpApproval(state, {
+                  threadId: input.threadId,
+                  turnId: input.turnId,
+                  tool,
+                  arguments: arguments_,
+                });
+                if (!approved) {
+                  result = { isError: true, error: "User declined this tool call." };
+                  status = "declined";
+                } else if (!state.mcpClient) {
+                  result = { isError: true, error: "Azure MCP tool is unavailable." };
+                  status = "failed";
+                } else {
+                  result = yield* Effect.tryPromise(() => {
+                    return state.mcpClient!.callTool({ name: tool.name, arguments: arguments_! });
+                  }).pipe(
+                    Effect.orElseSucceed(() => {
+                      return {
+                        isError: true,
+                        error: "Azure MCP server failed while running this tool.",
+                      };
+                    }),
+                  );
+                  if (record(result) && result.isError === true) status = "failed";
+                }
               }
             }
           }
@@ -1320,12 +1638,18 @@ export const makeOpenAICompatibleAdapter = Effect.fn("makeOpenAICompatibleAdapte
         ...state.session,
         resumeCursor: makeResumeCursor(input.threadId, state.messages, state.compactedThrough),
       };
+      const modelName = input.model ?? options.defaultModel;
       const usageSnapshot = normalizedUsage(
         usage,
-        contextWindowTokensByModel.get(input.model ?? options.defaultModel ?? "") ??
-          (String(options.provider) === "nvidiaNim" &&
-          (input.model ?? options.defaultModel) === "nvidia/nemotron-3-ultra-550b-a55b"
-            ? 1_000_000
+        contextWindowTokensByModel.get(modelName ?? "") ??
+          (String(options.provider) === "nvidiaNim"
+            ? modelName === "nvidia/nemotron-3-ultra-550b-a55b"
+              ? 1_000_000
+              : modelName === "moonshotai/kimi-k3"
+                ? 1_048_576
+                : modelName === "deepseek-ai/deepseek-v4-flash-0731"
+                  ? 1_000_000
+                  : undefined
             : undefined),
         state.totalProcessedTokens,
         state.compacted,

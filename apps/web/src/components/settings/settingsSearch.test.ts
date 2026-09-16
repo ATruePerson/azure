@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  isSettingsChromePath,
   searchableSetting,
   searchSettings,
   SETTINGS_SEARCH_ITEMS,
@@ -75,6 +76,14 @@ describe("searchSettings", () => {
       id: "capabilities",
       to: "/settings/capabilities",
     });
+  });
+
+  it("keeps capabilities and source-control on the thread sidebar", () => {
+    expect(isSettingsChromePath("/settings/general")).toBe(true);
+    expect(isSettingsChromePath("/settings/capabilities")).toBe(false);
+    expect(isSettingsChromePath("/settings/plugins")).toBe(false);
+    expect(isSettingsChromePath("/settings/scheduled-tasks")).toBe(false);
+    expect(isSettingsChromePath("/settings/source-control")).toBe(false);
   });
 
   it("routes appearance settings to their current section", () => {

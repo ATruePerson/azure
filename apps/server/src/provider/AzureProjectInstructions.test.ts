@@ -75,4 +75,22 @@ describe("Azure project instructions", () => {
       NodeFSP.readFile(NodePath.join(cwd, ".azure", "memory.md"), "utf8"),
     ).resolves.not.toContain("use the purple API client");
   });
+
+  it("injects capabilities catalog when includeCapabilitiesCatalog is true", async () => {
+    const cwd = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "azure-catalog-"));
+    directories.push(cwd);
+
+    const result = await prependAzureProjectInstructions({
+      cwd,
+      driver: ProviderDriverKind.make("customDriver"),
+      prompt: "Hello world",
+      includeCapabilitiesCatalog: true,
+    });
+
+    expect(result).toBeDefined();
+    expect(result).toContain("Hello world");
+    // Since ~/.azure/agents has symlinked agents, subagents catalog is injected
+    expect(result).toContain("<available_subagents>");
+    expect(result).toContain("code-architect");
+  });
 });

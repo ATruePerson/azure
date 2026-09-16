@@ -328,13 +328,12 @@ function AboutVersionSection() {
       : isDesktopUpdateButtonDisabled(updateState);
 
   const actionLabel: Record<string, string> = { download: "Download", install: "Install" };
-  const statusLabel: Record<string, string> = {
-    checking: "Checking…",
-    downloading: "Downloading…",
-    "up-to-date": "Up to Date",
-  };
   const buttonLabel =
-    actionLabel[action] ?? statusLabel[updateState?.status ?? ""] ?? "Check for Updates";
+    updateState?.status === "checking"
+      ? "Checking…"
+      : updateState?.status === "downloading"
+        ? "Downloading…"
+        : (actionLabel[action] ?? "Check for Updates");
   const description =
     action === "download" || action === "install"
       ? "Update available."

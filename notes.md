@@ -112,3 +112,36 @@ OpenCode's native adapter independently attaches the authenticated Azure MCP end
 4. Native providers use authenticated Azure MCP endpoint; direct OpenAI-compatible providers connect to same endpoint and run tool loops
 
 Do not copy/symlink capabilities into provider homes. Do not import/launch/fallback to OpenCode for Nvidia/OpenRouter/OpenCode Zen.
+
+---
+
+## Build & Install (2026-08-15) - Azure.app v0.0.32
+
+- Fixed: electron moved from dependencies to devDependencies in apps/desktop/package.json
+- Fixed: Added description and author fields (required by electron-builder)
+- Fixed: APP_DISPLAY_NAME in apps/desktop/scripts/electron-launcher.mjs changed from Azure Code to Azure
+- Built: pnpm exec vp exec --filter @azure/desktop -- electron-builder --projectDir apps/desktop --mac --arm64 --publish never OK
+- Artifacts: apps/desktop/dist/Azure-0.0.32-arm64-mac.zip + mac-arm64/Azure.app (CFBundleDisplayName = Azure, CFBundleIdentifier = com.electron.azuredesktop)
+- Installed: Copied Azure.app to /Applications/Azure.app (replaced old Azure Code.app)
+- Cleaned: Moved old T3 artifacts (T3-Code-0.0.33-_) and old Azure-Code-0.0.32-_ to trash
+- Brand assets: Using logo.svg from assets/prod/ (Azure gradient A mark)
+
+To build DMG (when hdiutil works):
+cd /Users/kabir/Documents/GitHub/Azure && hdiutil create -volname Azure -srcfolder apps/desktop/dist/mac-arm64/Azure.app -ov -format UDZO release/Azure-0.0.32-arm64.dmg
+
+To build DMG (run from repo root, not home):
+hdiutil requires escalation (disk-image device framework blocked in sandbox)
+
+## DMG Built (2026-08-15)
+
+- DMG: release/Azure-0.0.32-arm64.dmg (150M)
+- Installed app verified: CFBundleDisplayName=Azure, CFBundleName=Azure, CFBundleIdentifier=com.electron.azuredesktop, executable Azure
+
+## Launch Crash Fix (2026-08-15)
+
+- Symptom: opening Azure.app failed with kLSNoExecutableErr and SIGABRT in \_RegisterApplication (crash reports from 10:37)
+- Root cause: the earlier cp -R install broke the macOS code signature (codesign showed Info.plist=not bound, Sealed Resources=none, Identifier=Electron)
+- Fix: re-signed with CSC_IDENTITY_AUTO_DISCOVERY=false codesign --force --deep --sign - --timestamp=none, then cp to /Applications and lsregister -f
+- After: codesign shows Identifier=com.electron.azuredesktop, Info.plist entries=32, Sealed Resources version=2 rules=13 files=32
+- Launched OK: main + GPU + network helper processes alive, no new crash reports
+- Lesson: always deep re-sign an ad-hoc-built Electron bundle after copying it; process presence alone is insufficient

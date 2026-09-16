@@ -5,11 +5,60 @@ export const API_SUBAGENT_TOOLS = [
   {
     type: "function" as const,
     function: {
+      name: "spawn_subagent",
+      description:
+        "Spawn a specialized autonomous sub-agent from ~/.azure/agents to run a task in the background. Live progress streams into the Agents panel.",
+      parameters: {
+        type: "object",
+        properties: {
+          agent: {
+            type: "string",
+            description:
+              "The name of the agent to spawn (e.g. code-architect, fiction-writer, fiction-planner, etc.).",
+          },
+          task: {
+            type: "string",
+            description: "Detailed description of the task for the sub-agent.",
+          },
+          taskName: {
+            type: "string",
+            description: "Short 2-5 word label for the task.",
+          },
+          model: {
+            type: "string",
+            description: "Optional model override.",
+          },
+        },
+        required: ["agent", "task"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "get_subagent_status",
+      description: "Get the current status, progress, and result of a spawned sub-agent.",
+      parameters: {
+        type: "object",
+        properties: {
+          agentId: {
+            type: "string",
+            description: "The ID of the spawned agent.",
+          },
+        },
+        required: ["agentId"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
       name: "spawn_agent",
       description: "Run one direct child agent.",
       parameters: {
         type: "object",
         properties: {
+          agent: { type: "string" },
           task: { type: "string" },
           taskName: { type: "string" },
           model: { type: "string" },

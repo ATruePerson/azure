@@ -100,17 +100,18 @@ function AzureMark() {
       className="size-3.5 shrink-0"
       fill="none"
       role="img"
-      viewBox="250 240 524 560"
+      viewBox="0 0 32 32"
       xmlns="http://www.w3.org/2000/svg"
     >
-      <path
-        d="M306 748L512 278L718 748"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="88"
-      />
-      <path d="M408 582H616" stroke="#8BE9FF" strokeLinecap="round" strokeWidth="70" />
+      <circle cx="16" cy="16" r="15" fill="#141416" />
+      <g stroke="#5BE7FF" strokeWidth="1.4" fill="none">
+        <ellipse cx="16" cy="16" rx="10" ry="4.2" transform="rotate(-35 16 16)" />
+        <ellipse cx="16" cy="16" rx="10" ry="4.2" transform="rotate(35 16 16)" />
+        <ellipse cx="16" cy="16" rx="10" ry="4.2" transform="rotate(90 16 16)" />
+        <circle cx="24.4" cy="12.2" r="1.35" />
+        <circle cx="8.4" cy="20.4" r="1.35" />
+      </g>
+      <circle cx="16" cy="16" r="1.5" fill="#5BE7FF" />
     </svg>
   );
 }

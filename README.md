@@ -35,7 +35,7 @@ Tip: Use `npx azure@latest --help` for the full CLI reference.
 
 ### Desktop app
 
-Install the latest version of the desktop app from [GitHub Releases](https://github.com/pingdotgg/azure/releases), or from your favorite package registry:
+Install the latest version of the desktop app from [GitHub Releases](https://github.com/ATruePerson/azure/releases), or from your favorite package registry:
 
 #### Windows (`winget`)
 

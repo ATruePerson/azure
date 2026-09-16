@@ -1576,7 +1576,7 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
 }
 
 export function resolveDesktopProductName(version: string): string {
-  return desktopPackageJson.productName ?? "Azure Code";
+  return desktopPackageJson.productName ?? "Azure";
 }
 
 export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
@@ -1596,7 +1596,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   const buildConfig: Record<string, unknown> = {
     appId: DESKTOP_APP_ID,
     productName: resolveDesktopProductName(version),
-    artifactName: "Azure-Code-${version}-${arch}.${ext}",
+    artifactName: "Azure-${version}-${arch}.${ext}",
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
     files: [...DESKTOP_FILE_EXCLUSIONS],
     directories: {
@@ -1628,7 +1628,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       category: "public.app-category.developer-tools",
       protocols: [
         {
-          name: "Azure Code",
+          name: "Azure",
           schemes: ["azure-code", "azure"],
         },
       ],
@@ -1652,7 +1652,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       // azure-code:// OAuth callbacks to the app.
       protocols: [
         {
-          name: "Azure Code",
+          name: "Azure",
           schemes: ["azure-code", "azure"],
         },
       ],
@@ -1794,7 +1794,8 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     });
   }
 
-  const electronVersion = desktopPackageJson.dependencies.electron;
+  const electronVersion =
+    desktopPackageJson.dependencies.electron ?? desktopPackageJson.devDependencies?.electron;
 
   const serverDependencies = serverPackageJson.dependencies;
   if (!serverDependencies || Object.keys(serverDependencies).length === 0) {
@@ -1976,7 +1977,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     azureCommitHash: commitHash,
     private: true,
     packageManager: rootPackageJson.packageManager,
-    description: "Azure Code desktop build",
+    description: "Azure desktop build",
     author: "ATruePerson",
     main: "apps/desktop/dist-electron/main.cjs",
     build: yield* createBuildConfig(
@@ -2088,8 +2089,9 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     "--projectDir",
     stageAppDir,
     platformConfig.cliFlag,
+    ...(options.target && options.target !== "dir" ? [options.target] : []),
     `--${options.arch}`,
-    ...(options.target === "dir" ? ["--dir"] : options.target ? [`--${options.target}`] : []),
+    ...(options.target === "dir" ? ["--dir"] : []),
     "--publish",
     "never",
   ];
@@ -2234,7 +2236,7 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
     Flag.optional,
   ),
 }).pipe(
-  Command.withDescription("Build a desktop artifact for Azure Code."),
+  Command.withDescription("Build a desktop artifact for Azure."),
   Command.withHandler((input) => Effect.flatMap(resolveBuildOptions(input), buildDesktopArtifact)),
 );
 

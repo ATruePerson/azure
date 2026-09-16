@@ -163,6 +163,28 @@ describe("Azure home capability discovery", () => {
     ]);
   });
 
+  it("loads project-only skills only when cwd is under that project", async () => {
+    const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "azure-home-"));
+    const project = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "azure-project-"));
+    directories.push(home, project);
+    await NodeFSP.mkdir(NodePath.join(home, "skills", "focused"), { recursive: true });
+    await NodeFSP.writeFile(NodePath.join(home, "skills", "focused", "SKILL.md"), "focused");
+
+    await expect(
+      setAzureHomeCapabilityEnabled("skills", "focused", true, home, [project]),
+    ).resolves.toMatchObject({
+      skills: [{ id: "focused", enabled: true, projectRoots: [project] }],
+    });
+    await expect(discoverEnabledAzureSkillPaths(home)).resolves.toEqual([]);
+    await expect(discoverEnabledAzureSkillPaths(home, "/elsewhere")).resolves.toEqual([]);
+    await expect(discoverEnabledAzureSkillPaths(home, project)).resolves.toEqual([
+      NodePath.join(home, "skills", "focused"),
+    ]);
+    await expect(
+      discoverEnabledAzureSkillPaths(home, NodePath.join(project, "src")),
+    ).resolves.toEqual([NodePath.join(home, "skills", "focused")]);
+  });
+
   it("projects enabled Azure and portable-plugin skills and expands only known skill tokens", async () => {
     const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "azure-home-"));
     directories.push(home);

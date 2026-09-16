@@ -565,7 +565,12 @@ const backendOutputLogFactoryLayer = Layer.effect(
 
 const desktopLoggerLayer = Layer.mergeAll(
   Logger.layer([Logger.consolePretty(), Logger.tracerLogger], { mergeWithExisting: false }),
-  Layer.succeed(References.MinimumLogLevel, "Info"),
+  Layer.succeed(
+    References.MinimumLogLevel,
+    process.env.AZURE_LOG_LEVEL === "Info" || process.env.AZURE_LOG_LEVEL === "Debug"
+      ? (process.env.AZURE_LOG_LEVEL as any)
+      : "Warning",
+  ),
 );
 
 const tracerLayer = Layer.unwrap(

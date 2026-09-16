@@ -13,6 +13,24 @@ export type SettingsPath =
   | "/settings/connections"
   | "/settings/archived";
 
+const SETTINGS_WORKSPACE_PATHS = [
+  "/settings/capabilities",
+  "/settings/hooks",
+  "/settings/plugins",
+  "/settings/skills",
+  "/settings/mcp",
+  "/settings/scheduled-tasks",
+  "/settings/source-control",
+] as const;
+
+export function isSettingsChromePath(pathname: string): boolean {
+  if (pathname === "/settings" || pathname === "/settings/") return true;
+  if (!pathname.startsWith("/settings/")) return false;
+  return !SETTINGS_WORKSPACE_PATHS.some(
+    (path) => pathname === path || pathname.startsWith(`${path}/`),
+  );
+}
+
 export interface SettingsSearchItem {
   readonly id: string;
   readonly title: string;

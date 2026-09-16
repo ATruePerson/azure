@@ -1,6 +1,6 @@
 {
   "$schema": "https://azure.codes/schema/azure.json",
-  "iconPath": "assets/dev/blueprint-web-apple-touch-180.png",
+  "iconPath": "assets/prod/logo.svg",
   "scripts": [
     {
       "name": "Setup Worktree",

@@ -2,6 +2,8 @@
   "name": "@azure/desktop",
   "version": "0.0.32",
   "private": true,
+  "description": "Azure desktop build",
+  "author": "ATruePerson",
   "type": "module",
   "main": "dist-electron/main.cjs",
   "scripts": {
@@ -34,6 +36,16 @@
     "electron-builder": "26.15.6",
     "tailwindcss": "^4.0.0",
     "vite-plus": "catalog:"
+  },
+  "build": {
+    "appId": "com.atrueperson.azurecode",
+    "directories": {
+      "buildResources": "resources"
+    },
+    "mac": {
+      "icon": "icon.icns",
+      "category": "public.app-category.developer-tools"
+    }
   },
   "productName": "Azure"
 }

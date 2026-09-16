@@ -6,6 +6,7 @@ import * as NodePath from "node:path";
 import * as NodeOS from "node:os";
 
 import type { ProviderDriverKind } from "@azure/contracts";
+import { discoverEnabledAzureAgents, discoverEnabledAzureSkills } from "./AzureHomeCapabilities.ts";
 
 const MAX_AZURE_MD_BYTES = 64 * 1024;
 const MAX_MEMORY_FILE_BYTES = 256 * 1024;
@@ -319,12 +320,45 @@ export const prependAzureProjectInstructions = async (input: {
   readonly prompt: string | undefined;
   readonly memoryCommand?: AzureMemoryCommandResult;
   readonly includeProjectInstructions?: boolean;
+  readonly includeCapabilitiesCatalog?: boolean;
 }): Promise<string | undefined> => {
-  if (!input.cwd) {
-    return input.prompt;
-  }
-
   try {
+    let capabilitiesCatalog: string | undefined;
+    if (input.includeCapabilitiesCatalog) {
+      const [skills, agents] = await Promise.all([
+        discoverEnabledAzureSkills(input.cwd ? { cwd: input.cwd } : undefined).catch(() => []),
+        discoverEnabledAzureAgents().catch(() => []),
+      ]);
+
+      const parts: string[] = [];
+      if (skills.length > 0) {
+        const skillList = skills
+          .map((s) => `- ${s.name}: ${s.description || "Specialized skill"}`)
+          .join("\n");
+        parts.push(
+          `<available_skills>\nUse skills when specific domain guidance or workflows apply. Reference or activate them as needed:\n${skillList}\n</available_skills>`,
+        );
+      }
+      if (agents.length > 0) {
+        const agentList = agents
+          .map((a) => {
+            const modelInfo = a.model ? ` (model: ${a.model})` : "";
+            return `- ${a.name}${modelInfo}: ${a.description || "Autonomous agent"}`;
+          })
+          .join("\n");
+        parts.push(
+          `<available_subagents>\nYou can delegate tasks or run specialized sub-agents in the background using the spawn_subagent tool:\n${agentList}\n</available_subagents>`,
+        );
+      }
+      if (parts.length > 0) {
+        capabilitiesCatalog = parts.join("\n\n");
+      }
+    }
+
+    if (!input.cwd) {
+      return [capabilitiesCatalog, input.prompt].filter(Boolean).join("\n\n") || input.prompt;
+    }
+
     const root = await NodeFSP.realpath(input.cwd);
     const instructions =
       input.includeProjectInstructions === false
@@ -337,7 +371,10 @@ export const prependAzureProjectInstructions = async (input: {
     const prompt = input.memoryCommand
       ? `${input.prompt}\n\n[Azure memory] ${input.memoryCommand.message}`
       : (input.prompt ?? "");
-    return [instructions, memory, prompt].filter(Boolean).join("\n\n") || input.prompt;
+    return (
+      [instructions, capabilitiesCatalog, memory, prompt].filter(Boolean).join("\n\n") ||
+      input.prompt
+    );
   } catch {
     return input.prompt;
   }

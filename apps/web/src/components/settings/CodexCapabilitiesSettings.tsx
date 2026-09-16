@@ -1,4 +1,11 @@
-import { BookOpenIcon, PlugIcon, PuzzleIcon, SearchIcon, WebhookIcon } from "lucide-react";
+import {
+  BookOpenIcon,
+  CheckIcon,
+  PlugIcon,
+  PuzzleIcon,
+  SearchIcon,
+  WebhookIcon,
+} from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useCallback, useMemo, useState, type ComponentType } from "react";
 import {
@@ -6,6 +13,7 @@ import {
   type CodexCapabilities,
   type CodexCapabilityItem,
 } from "@azure/contracts";
+import { useProjects } from "../../state/entities";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { usePrimaryEnvironment } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
@@ -13,9 +21,10 @@ import { serverEnvironment } from "../../state/server";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
-import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
+import { SettingsPageContainer } from "./settingsLayout";
 import { searchableSetting, type SettingsSearchItemId } from "./settingsSearch";
 import { useAssetUrl } from "~/assets/assetUrls";
+import { cn } from "~/lib/utils";
 
 const DEFAULT_AZURE_RUNTIME_INSTANCE_ID = ProviderInstanceId.make("codex");
 
@@ -43,7 +52,7 @@ const CATEGORY_CONFIG: Readonly<
     key: "hooks",
     title: "Hooks",
     description:
-      "SessionStart and UserPromptSubmit run with every provider. SubagentStart is native-only.",
+      "SessionStart and UserPromptSubmit. Scope a hook to one project so other workspaces skip it.",
     searchId: "hooks",
     route: "/settings/hooks",
     icon: WebhookIcon,
@@ -51,7 +60,8 @@ const CATEGORY_CONFIG: Readonly<
   plugins: {
     key: "plugins",
     title: "Plugins",
-    description: "Portable plugin skills and hooks are available to every provider.",
+    description:
+      "Portable plugin skills and hooks. Scope them to one project to skip other workspaces.",
     searchId: "plugins",
     route: "/settings/plugins",
     icon: PuzzleIcon,
@@ -59,7 +69,8 @@ const CATEGORY_CONFIG: Readonly<
   skills: {
     key: "skills",
     title: "Skills",
-    description: "Enabled Azure skills are available to every provider immediately.",
+    description:
+      "Everywhere loads the skill in every session. A project limits it to that workspace.",
     searchId: "skills",
     route: "/settings/skills",
     icon: BookOpenIcon,
@@ -68,7 +79,7 @@ const CATEGORY_CONFIG: Readonly<
     key: "mcpServers",
     title: "MCP",
     description:
-      "Enabled Azure MCP servers are shared by every provider after a fresh Azure session.",
+      "Everywhere shares the MCP with every session. A project loads it only for that workspace.",
     searchId: "mcp",
     route: "/settings/mcp",
     icon: PlugIcon,
@@ -151,61 +162,70 @@ function CapabilityRows({
   items,
   category,
   environmentId,
+  projects,
   updatingItemId,
   onToggle,
+  onScopeChange,
 }: {
   readonly items: ReadonlyArray<CodexCapabilityItem>;
   readonly category: CapabilityCategory;
   readonly environmentId: Parameters<typeof useAssetUrl>[0] | null;
+  readonly projects: ReadonlyArray<{ readonly title: string; readonly workspaceRoot: string }>;
   readonly updatingItemId: string | null;
   readonly onToggle: ((item: CodexCapabilityItem, enabled: boolean) => void) | undefined;
+  readonly onScopeChange:
+    | ((item: CodexCapabilityItem, projectRoots: ReadonlyArray<string>) => void)
+    | undefined;
 }) {
   if (items.length === 0) {
-    return <p className="px-3 text-sm text-muted-foreground">None found.</p>;
+    return <p className="px-1 py-6 text-sm text-muted-foreground">None found.</p>;
   }
   return items.map((item) => {
     const updateKey = `${item.id}:${item.label}`;
-    const detail = [item.description, item.detail].filter(Boolean).join(" · ");
-    const controlDescription =
-      item.control?._tag === "azure-skill"
-        ? "Toggle availability for Azure. Skills refresh across providers immediately."
-        : item.control?._tag === "azure-capability"
-          ? "Toggle availability for Azure. Start a fresh Azure session after plugin, hook, or MCP changes."
-          : item.control?._tag === "plugin"
-            ? `Controlled by the ${item.control.pluginId} plugin.`
-            : item.control?._tag === "unsupported"
-              ? item.control.reason
-              : item.canToggle
-                ? "Toggle availability for Azure."
-                : "Managed by its source and cannot be changed here.";
-    const description = `${detail ? `${detail} · ` : ""}${controlDescription}`;
-    const status =
-      item.enabled === undefined
-        ? undefined
-        : `${item.enabled ? "Enabled" : "Disabled"}${item.restartRequired ? " · New session required" : ""}`;
+    const description = item.description ?? item.detail ?? "";
     const canToggle = item.canToggle && item.enabled !== undefined && onToggle !== undefined;
+    const scopedRoot = item.projectRoots?.[0] ?? "";
     return (
-      <SettingsRow
-        key={updateKey}
-        title={
-          <span className="flex items-center gap-3">
-            <CapabilityIcon item={item} category={category} environmentId={environmentId} />
-            <span>{item.label}</span>
-          </span>
-        }
-        description={description}
-        status={status}
-        control={
-          canToggle ? (
+      <div key={updateKey} className="flex items-center gap-3 py-3">
+        <CapabilityIcon item={item} category={category} environmentId={environmentId} />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium text-foreground">{item.label}</div>
+          {description ? (
+            <div className="truncate text-sm text-muted-foreground">{description}</div>
+          ) : null}
+        </div>
+        {canToggle ? (
+          <div className="flex shrink-0 items-center gap-2">
+            {onScopeChange && projects.length > 0 ? (
+              <select
+                className="h-8 max-w-36 rounded-md border border-input bg-background px-2 text-xs text-foreground"
+                value={scopedRoot}
+                disabled={updatingItemId === updateKey}
+                aria-label={`Load ${item.label} for`}
+                onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  onScopeChange(item, value ? [value] : []);
+                }}
+              >
+                <option value="">Everywhere</option>
+                {projects.map((project) => (
+                  <option key={project.workspaceRoot} value={project.workspaceRoot}>
+                    {project.title}
+                  </option>
+                ))}
+              </select>
+            ) : null}
             <Switch
               checked={item.enabled}
               disabled={updatingItemId === updateKey}
               onCheckedChange={(enabled) => onToggle(item, enabled)}
               aria-label={`${item.enabled ? "Disable" : "Enable"} ${item.label}`}
             />
-          ) : undefined
-        }
-      />
+          </div>
+        ) : (
+          <CheckIcon className="size-4 shrink-0 text-muted-foreground/50" aria-hidden />
+        )}
+      </div>
     );
   });
 }
@@ -217,6 +237,7 @@ export function CodexCapabilitiesSettings({
 }) {
   const environment = usePrimaryEnvironment();
   const environmentId = environment?.environmentId ?? null;
+  const projects = useProjects();
   const [query, setQuery] = useState("");
   const [updatingItemId, setUpdatingItemId] = useState<string | null>(null);
   const instanceId = DEFAULT_AZURE_RUNTIME_INSTANCE_ID;
@@ -250,11 +271,8 @@ export function CodexCapabilitiesSettings({
       }),
     ) as Record<CapabilityCategory, ReadonlyArray<CodexCapabilityItem>>;
   }, [data, query]);
-  const handleToggle = useCallback(
-    async (item: CodexCapabilityItem, enabled: boolean) => {
-      if (environmentId === null || updatingItemId !== null) return;
-      const updateKey = `${item.id}:${item.label}`;
-      setUpdatingItemId(updateKey);
+  const capabilityTarget = useCallback(
+    (item: CodexCapabilityItem) => {
       const capabilityKind =
         item.control?._tag === "azure-capability"
           ? item.control.kind
@@ -262,9 +280,19 @@ export function CodexCapabilitiesSettings({
             ? "hooks"
             : (category ?? "skills");
       const targetId = item.control?._tag === "plugin" ? item.control.pluginId : item.id;
+      return { kind: capabilityKind, id: targetId };
+    },
+    [category],
+  );
+  const handleToggle = useCallback(
+    async (item: CodexCapabilityItem, enabled: boolean) => {
+      if (environmentId === null || updatingItemId !== null) return;
+      const updateKey = `${item.id}:${item.label}`;
+      setUpdatingItemId(updateKey);
+      const target = capabilityTarget(item);
       const result = await setAzureCapabilityEnabled({
         environmentId,
-        input: { kind: capabilityKind, id: targetId, enabled },
+        input: { kind: target.kind, id: target.id, enabled },
       });
       setUpdatingItemId(null);
       if (result._tag === "Success") {
@@ -272,98 +300,138 @@ export function CodexCapabilitiesSettings({
         void refreshProviders({ environmentId, input: {} });
       }
     },
-    [category, environmentId, refresh, refreshProviders, setAzureCapabilityEnabled, updatingItemId],
+    [
+      capabilityTarget,
+      environmentId,
+      refresh,
+      refreshProviders,
+      setAzureCapabilityEnabled,
+      updatingItemId,
+    ],
   );
-  const renderSection = (section: CapabilityCategory) => {
-    const config = CATEGORY_CONFIG[section];
-    return (
-      <SettingsSection key={section} id={!category ? undefined : heading.id} title={config.title}>
-        <CapabilityRows
-          items={filteredItemsByCategory[section]}
-          category={section}
-          environmentId={environmentId}
-          updatingItemId={updatingItemId}
-          onToggle={handleToggle}
-        />
-      </SettingsSection>
-    );
-  };
+  const handleScopeChange = useCallback(
+    async (item: CodexCapabilityItem, projectRoots: ReadonlyArray<string>) => {
+      if (environmentId === null || updatingItemId !== null) return;
+      const updateKey = `${item.id}:${item.label}`;
+      setUpdatingItemId(updateKey);
+      const target = capabilityTarget(item);
+      const result = await setAzureCapabilityEnabled({
+        environmentId,
+        input: {
+          kind: target.kind,
+          id: target.id,
+          enabled: item.enabled !== false,
+          projectRoots: [...projectRoots],
+        },
+      });
+      setUpdatingItemId(null);
+      if (result._tag === "Success") {
+        refresh();
+        void refreshProviders({ environmentId, input: {} });
+      }
+    },
+    [
+      capabilityTarget,
+      environmentId,
+      refresh,
+      refreshProviders,
+      setAzureCapabilityEnabled,
+      updatingItemId,
+    ],
+  );
+  const renderSection = (section: CapabilityCategory) => (
+    <CapabilityRows
+      items={filteredItemsByCategory[section]}
+      category={section}
+      environmentId={environmentId}
+      projects={projects}
+      updatingItemId={updatingItemId}
+      onToggle={handleToggle}
+      onScopeChange={handleScopeChange}
+    />
+  );
+  const tabOrder: CapabilityView[] = ["plugins", "skills", "mcp", "hooks", "all"];
+  const pageTitle = category ? CATEGORY_CONFIG[category].title : "Plugins";
 
   return (
-    <SettingsPageContainer>
-      <div>
-        <h1 className="text-2xl font-semibold">
-          {category ? CATEGORY_CONFIG[category].title : "Capabilities"}
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {category
-            ? CATEGORY_CONFIG[category].description
-            : "Azure skills are shared immediately. Portable plugins, hooks, and MCP changes apply after a fresh Azure session."}
-        </p>
+    <SettingsPageContainer className="max-w-3xl gap-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 id={heading.id} className="text-2xl font-semibold tracking-tight">
+            {pageTitle}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">Manage plugins, skills, and MCPs</p>
+        </div>
+        <Button size="sm" variant="outline" onClick={refresh} disabled={isPending}>
+          {isPending ? "Refreshing…" : "Refresh"}
+        </Button>
       </div>
-      <div className="px-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Button size="xs" variant="outline" onClick={refresh} disabled={isPending}>
-            {isPending ? "Refreshing…" : "Refresh"}
-          </Button>
-          <div
-            className="flex gap-1 rounded-md border border-border p-1"
-            role="tablist"
-            aria-label="Capabilities"
-          >
-            {(["all", ...Object.keys(CATEGORY_CONFIG)] as CapabilityView[]).map((section) => (
-              <Button
+      <div className="flex flex-wrap items-center gap-2">
+        <div
+          className="flex min-w-0 flex-1 flex-wrap gap-1"
+          role="tablist"
+          aria-label="Capabilities"
+        >
+          {tabOrder.map((section) => {
+            const count =
+              section === "all"
+                ? (Object.keys(CATEGORY_CONFIG) as CapabilityCategory[]).reduce(
+                    (total, key) => total + filteredItemsByCategory[key].length,
+                    0,
+                  )
+                : filteredItemsByCategory[section].length;
+            const label = section === "all" ? "All" : CATEGORY_CONFIG[section].title;
+            return (
+              <Link
                 key={section}
-                size="xs"
-                variant={section === activeCategory ? "secondary" : "ghost"}
-                render={
-                  <Link
-                    to={
-                      section === "all" ? "/settings/capabilities" : CATEGORY_CONFIG[section].route
-                    }
-                  />
-                }
+                to={section === "all" ? "/settings/capabilities" : CATEGORY_CONFIG[section].route}
                 role="tab"
                 aria-selected={section === activeCategory}
+                className={cn(
+                  "rounded-md px-2.5 py-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground",
+                  section === activeCategory && "bg-muted text-foreground",
+                )}
               >
-                {section === "all" ? "All" : CATEGORY_CONFIG[section].title}
-              </Button>
-            ))}
-          </div>
-          <div className="relative w-full max-w-sm">
-            <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.currentTarget.value)}
-              placeholder={`Search ${activeCategory === "all" ? "capabilities" : CATEGORY_CONFIG[activeCategory].title.toLowerCase()}`}
-              aria-label={`Search ${activeCategory === "all" ? "capabilities" : CATEGORY_CONFIG[activeCategory].title.toLowerCase()}`}
-              className="pl-8"
-            />
-          </div>
+                {label} {data ? count : ""}
+              </Link>
+            );
+          })}
         </div>
-        {data?.homeStatus === "missing" ? (
-          <p className="mt-2 text-sm text-muted-foreground">Azure home has no registry yet.</p>
-        ) : data?.homeStatus === "unavailable" ? (
-          <p role="alert" className="mt-2 text-sm text-destructive">
-            Azure home is unavailable. Check its permissions and try again.
-          </p>
-        ) : null}
+        <div className="relative w-full max-w-xs">
+          <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.currentTarget.value)}
+            placeholder={`Search ${activeCategory === "all" ? "plugins" : CATEGORY_CONFIG[activeCategory].title.toLowerCase()}`}
+            aria-label={`Search ${activeCategory === "all" ? "plugins" : CATEGORY_CONFIG[activeCategory].title.toLowerCase()}`}
+            className="h-8 rounded-full pl-8"
+          />
+        </div>
       </div>
+      {data?.homeStatus === "missing" ? (
+        <p className="text-sm text-muted-foreground">Azure home has no registry yet.</p>
+      ) : data?.homeStatus === "unavailable" ? (
+        <p role="alert" className="text-sm text-destructive">
+          Azure home is unavailable. Check its permissions and try again.
+        </p>
+      ) : null}
       {loading ? (
-        <p role="status" className="px-3 text-sm text-muted-foreground">
+        <p role="status" className="text-sm text-muted-foreground">
           Loading Azure integrations…
         </p>
       ) : error ? (
-        <p role="alert" className="px-3 text-sm text-destructive">
+        <p role="alert" className="text-sm text-destructive">
           {error}
         </p>
       ) : data ? (
-        activeCategory === "all" ? (
-          (Object.keys(CATEGORY_CONFIG) as CapabilityCategory[]).map(renderSection)
-        ) : (
-          renderSection(activeCategory)
-        )
+        <div className="divide-y divide-border/60">
+          {activeCategory === "all"
+            ? (["plugins", "skills", "mcp", "hooks"] as CapabilityCategory[])
+                .filter((section) => filteredItemsByCategory[section].length > 0)
+                .map((section) => <div key={section}>{renderSection(section)}</div>)
+            : renderSection(activeCategory)}
+        </div>
       ) : null}
     </SettingsPageContainer>
   );

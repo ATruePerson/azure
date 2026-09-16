@@ -58,6 +58,10 @@ function sseData(value: unknown): string {
   return `data: ${JSON.stringify(value)}\n\n`;
 }
 
+function sseDone(): string {
+  return "data: [DONE]\n\n";
+}
+
 function clientFor(factory: ResponseFactory, bodies: string[] = []) {
   return HttpClient.make((request) =>
     HttpClientRequest.toWeb(request).pipe(
@@ -1447,5 +1451,232 @@ describe("OpenAICompatibleRuntime", () => {
         McpProviderSession.clearMcpProviderSession(threadId);
       }
     }),
+  );
+
+  it.effect("executes spawn_subagent tool call and emits task.started activity", () =>
+    Effect.gen(function* () {
+      const bodies: string[] = [];
+      const threadId = thread("azure-spawn-subagent");
+      const subagentCompleted = yield* Deferred.make<void>();
+      const adapter = yield* makeAdapter(
+        HttpClient.make((request) =>
+          HttpClientRequest.toWeb(request).pipe(
+            Effect.mapError(
+              (cause) =>
+                new HttpClientError.HttpClientError({
+                  reason: new HttpClientError.TransportError({ request, cause }),
+                }),
+            ),
+            Effect.flatMap((webRequest) =>
+              Effect.promise(async () => {
+                if (webRequest.method === "GET") {
+                  return HttpClientResponse.fromWeb(
+                    request,
+                    response(JSON.stringify({ data: [{ id: "test-model" }] })),
+                  );
+                }
+                const text = await webRequest.text();
+                if (text.includes('"stream":true') || text.includes('"stream": true')) {
+                  bodies.push(text);
+                  return HttpClientResponse.fromWeb(
+                    request,
+                    bodies.length === 1
+                      ? sse([
+                          sseData({
+                            id: "chunk-1",
+                            choices: [
+                              {
+                                index: 0,
+                                delta: {
+                                  tool_calls: [
+                                    {
+                                      index: 0,
+                                      id: "call-spawn-1",
+                                      type: "function",
+                                      function: {
+                                        name: "spawn_subagent",
+                                        arguments: JSON.stringify({
+                                          agent: "code-architect",
+                                          task: "Design high performance cache",
+                                          taskName: "Cache Architecture",
+                                        }),
+                                      },
+                                    },
+                                  ],
+                                },
+                              },
+                            ],
+                          }),
+                          sseDone(),
+                        ])
+                      : sse([
+                          sseData({
+                            id: "chunk-2",
+                            choices: [
+                              {
+                                index: 0,
+                                delta: { content: "Subagent spawned successfully." },
+                              },
+                            ],
+                          }),
+                          sseDone(),
+                        ]),
+                  );
+                }
+                return HttpClientResponse.fromWeb(
+                  request,
+                  response(
+                    JSON.stringify({
+                      choices: [{ message: { content: "Subagent finished cache design." } }],
+                    }),
+                  ),
+                );
+              }),
+            ),
+          ),
+        ),
+      );
+
+      const events: any[] = [];
+      const turnCompleted = yield* Deferred.make<void>();
+      yield* Stream.runForEach(adapter.streamEvents, (e) => {
+        events.push(e);
+        if (e.type === "turn.completed") {
+          return Deferred.succeed(turnCompleted, undefined).pipe(Effect.asVoid);
+        }
+        if (e.type === "task.completed" && e.payload?.taskType === "subagent") {
+          return Deferred.succeed(subagentCompleted, undefined).pipe(Effect.asVoid);
+        }
+        return Effect.void;
+      }).pipe(Effect.forkChild);
+
+      yield* adapter.startSession(startInput("azure-spawn-subagent"));
+      yield* adapter.sendTurn({ threadId, input: "Spawn the code-architect" });
+      yield* Deferred.await(turnCompleted);
+      yield* Deferred.await(subagentCompleted);
+
+      assert.equal(bodies.length, 2);
+      assert.include(bodies[1]!, '"tool_call_id":"call-spawn-1"');
+      assert.include(bodies[1]!, "Subagent spawned and running in the background");
+      const taskStarted = events.find((e) => e.type === "task.started");
+      assert.isDefined(taskStarted);
+      assert.equal(taskStarted.payload.taskType, "subagent");
+      assert.equal(taskStarted.payload.agentKind, "agent");
+      assert.equal(taskStarted.payload.title, "Cache Architecture");
+
+      const taskDone = events.find(
+        (e) => e.type === "task.completed" && e.payload?.taskType === "subagent",
+      );
+      assert.isDefined(taskDone);
+      assert.equal(taskDone.payload.status, "completed");
+    }),
+  );
+
+  it.effect("retries on transient HTTP 529 and succeeds on subsequent attempt", () =>
+    Effect.gen(function* () {
+      let attempts = 0;
+      const client = clientFor((request) => {
+        if (request.method === "POST") {
+          attempts++;
+          if (attempts === 1) {
+            return response("Overloaded", 529);
+          }
+          return sse([
+            sseData({
+              id: "chunk-1",
+              choices: [{ delta: { content: "Recovered from 529" }, finish_reason: "stop" }],
+            }),
+            sseDone(),
+          ]);
+        }
+        return response(JSON.stringify({ data: [] }));
+      });
+      const adapter = yield* makeAdapter(client, { retryDelayMs: 0 });
+      const threadId = thread("retry-529");
+      const turnCompleted = yield* Deferred.make<any>();
+      yield* Stream.runForEach(adapter.streamEvents, (e) => {
+        if (e.type === "turn.completed") {
+          return Deferred.succeed(turnCompleted, e).pipe(Effect.asVoid);
+        }
+        return Effect.void;
+      }).pipe(Effect.forkChild);
+
+      yield* adapter.startSession(startInput("retry-529"));
+      yield* adapter.sendTurn({ threadId, input: "test" });
+      const completed = yield* Deferred.await(turnCompleted);
+      assert.isDefined(completed);
+      assert.equal(completed.payload.state, "completed");
+      assert.equal(attempts, 2);
+    }),
+  );
+
+  it.effect("surfaces descriptive error message when HTTP 529 persists after retries", () =>
+    Effect.gen(function* () {
+      let attempts = 0;
+      const client = clientFor(() => {
+        attempts++;
+        return response("Overloaded", 529);
+      });
+      const adapter = yield* makeAdapter(client, { retryDelayMs: 0 });
+      const threadId = thread("fail-529");
+      const turnCompleted = yield* Deferred.make<any>();
+      yield* Stream.runForEach(adapter.streamEvents, (e) => {
+        if (e.type === "turn.completed") {
+          return Deferred.succeed(turnCompleted, e).pipe(Effect.asVoid);
+        }
+        return Effect.void;
+      }).pipe(Effect.forkChild);
+
+      yield* adapter.startSession(startInput("fail-529"));
+      yield* adapter.sendTurn({ threadId, input: "test" });
+      const completed = yield* Deferred.await(turnCompleted);
+      assert.isDefined(completed);
+      assert.equal(completed.payload.state, "failed");
+      assert.include(completed.payload.errorMessage ?? "", "temporarily overloaded (HTTP 529)");
+      assert.equal(attempts, 4);
+    }),
+  );
+
+  it.effect(
+    "maps reasoning_effort for moonshotai/kimi-k3 and deepseek-ai/deepseek-v4-flash-0731 on nvidiaNim",
+    () =>
+      Effect.gen(function* () {
+        const bodies: string[] = [];
+        const client = clientFor(
+          () =>
+            sse([
+              sseData({
+                choices: [{ delta: { content: "ok" }, finish_reason: "stop" }],
+              }),
+              sseDone(),
+            ]),
+          bodies,
+        );
+        const adapter = yield* makeAdapter(client, {
+          provider: ProviderDriverKind.make("nvidiaNim"),
+        });
+        const threadId = thread("nvidia-reasoning-effort");
+        yield* adapter.startSession({
+          ...startInput("nvidia-reasoning-effort"),
+          provider: ProviderDriverKind.make("nvidiaNim"),
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("nvidiaNim"),
+            model: "moonshotai/kimi-k3",
+            options: [{ id: "reasoningEffort", value: "max" }],
+          },
+        });
+        yield* adapter.sendTurn({
+          threadId,
+          input: "hi",
+          model: "moonshotai/kimi-k3",
+          modelOptions: [{ id: "reasoningEffort", value: "max" }],
+        });
+        yield* Stream.runHead(
+          Stream.filter(adapter.streamEvents, (event) => event.type === "turn.completed"),
+        );
+        assert.equal(bodies.length, 1);
+        const payload = JSON.parse(bodies[0]!);
+        assert.equal(payload.reasoning_effort, "max");
+      }),
   );
 });
